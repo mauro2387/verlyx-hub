@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Contrato de Servicios</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Georgia', serif;
+            color: #333;
+            line-height: 1.8;
+            padding: 50px;
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+            border-bottom: 3px double #3F51B5;
+            padding-bottom: 20px;
+        }
+        
+        .header h1 {
+            color: #3F51B5;
+            font-size: 28px;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+        
+        .contract-number {
+            font-size: 16px;
+            color: #666;
+            font-weight: bold;
+        }
+        
+        .section {
+            margin-bottom: 30px;
+        }
+        
+        .section-title {
+            color: #3F51B5;
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 15px;
+            text-transform: uppercase;
+            border-bottom: 2px solid #3F51B5;
+            padding-bottom: 5px;
+        }
+        
+        .parties-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            margin-bottom: 30px;
+        }
+        
+        .party-box {
+            background-color: #f5f5f5;
+            padding: 20px;
+            border-left: 4px solid #3F51B5;
+            border-radius: 3px;
+        }
+        
+        .party-box h3 {
+            color: #3F51B5;
+            margin-bottom: 10px;
+            font-size: 16px;
+        }
+        
+        .party-box p {
+            margin: 5px 0;
+        }
+        
+        .info-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        
+        .info-table td {
+            padding: 10px;
+            border: 1px solid #ddd;
+        }
+        
+        .info-table td:first-child {
+            background-color: #f9f9f9;
+            font-weight: bold;
+            width: 200px;
+            color: #3F51B5;
+        }
+        
+        .clause {
+            margin: 20px 0;
+            text-align: justify;
+            padding-left: 20px;
+        }
+        
+        .signatures {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 50px;
+            margin-top: 80px;
+        }
+        
+        .signature-box {
+            text-align: center;
+        }
+        
+        .signature-line {
+            border-top: 2px solid #333;
+            margin-bottom: 10px;
+            padding-top: 60px;
+        }
+        
+        .footer {
+            margin-top: 50px;
+            text-align: center;
+            color: #888;
+            font-size: 11px;
+            padding-top: 20px;
+            border-top: 1px solid #ddd;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Contrato de Prestación de Servicios</h1>
+        <div class="contract-number">Contrato N° {{contract_number}}</div>
+        <div class="contract-number">Fecha: {{contract_date}}</div>
+    </div>
+    
+    <div class="section">
+        <div class="section-title">Partes Contratantes</div>
+        <div class="parties-grid">
+            <div class="party-box">
+                <h3>PARTE A (Prestador)</h3>
+                <p><strong>{{party_a_name}}</strong></p>
+                <p>DNI/CIF: {{party_a_id}}</p>
+            </div>
+            <div class="party-box">
+                <h3>PARTE B (Cliente)</h3>
+                <p><strong>{{party_b_name}}</strong></p>
+                <p>DNI/CIF: {{party_b_id}}</p>
+            </div>
+        </div>
+    </div>
+    
+    <div class="section">
+        <div class="section-title">Objeto del Contrato</div>
+        <div class="clause">
+            <p>{{service_description}}</p>
+        </div>
+    </div>
+    
+    <div class="section">
+        <div class="section-title">Condiciones del Servicio</div>
+        <table class="info-table">
+            <tr>
+                <td>Duración:</td>
+                <td>{{duration}}</td>
+            </tr>
+            <tr>
+                <td>Fecha de Inicio:</td>
+                <td>{{start_date}}</td>
+            </tr>
+            {{#if end_date}}
+            <tr>
+                <td>Fecha de Finalización:</td>
+                <td>{{end_date}}</td>
+            </tr>
+            {{/if}}
+            <tr>
+                <td>Importe:</td>
+                <td><strong>€{{payment_amount}}</strong></td>
+            </tr>
+        </table>
+    </div>
+    
+    <div class="section">
+        <div class="section-title">Condiciones de Pago</div>
+        <div class="clause">
+            <p>{{payment_terms}}</p>
+        </div>
+    </div>
+    
+    {{#if clauses}}
+    <div class="section">
+        <div class="section-title">Cláusulas Adicionales</div>
+        <div class="clause">
+            <p>{{clauses}}</p>
+        </div>
+    </div>
+    {{/if}}
+    
+    <div class="signatures">
+        <div class="signature-box">
+            <div class="signature-line"></div>
+            <p><strong>{{party_a_name}}</strong></p>
+            <p>Parte A - Prestador</p>
+        </div>
+        <div class="signature-box">
+            <div class="signature-line"></div>
+            <p><strong>{{party_b_name}}</strong></p>
+            <p>Parte B - Cliente</p>
+        </div>
+    </div>
+    
+    <div class="footer">
+        <p>Este contrato ha sido generado electrónicamente y tiene validez legal</p>
+        <p>Generado por Verlyx Hub - {{generation_date}}</p>
+    </div>
+</body>
+</html>

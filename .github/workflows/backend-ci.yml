@@ -1,0 +1,64 @@
+name: Backend CI/CD
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'verlyx_hub_backend/**'
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: verlyx_hub_backend/package-lock.json
+      
+      - name: Install dependencies
+        working-directory: verlyx_hub_backend
+        run: npm ci
+      
+      - name: Run linter
+        working-directory: verlyx_hub_backend
+        run: npm run lint
+      
+      - name: Run tests
+        working-directory: verlyx_hub_backend
+        run: npm run test
+      
+      - name: Run e2e tests
+        working-directory: verlyx_hub_backend
+        run: npm run test:e2e
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '20'
+      
+      - name: Build
+        working-directory: verlyx_hub_backend
+        run: |
+          npm ci
+          npm run build
+      
+      - name: Build Docker image
+        working-directory: verlyx_hub_backend
+        run: |
+          docker build -t verlyx-hub-backend:${{ github.sha }} .
+          docker tag verlyx-hub-backend:${{ github.sha }} verlyx-hub-backend:latest

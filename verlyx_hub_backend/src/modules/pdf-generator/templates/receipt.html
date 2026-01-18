@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Recibo de Pago</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Arial', sans-serif;
+            color: #333;
+            padding: 60px 40px;
+        }
+        
+        .receipt-container {
+            max-width: 600px;
+            margin: 0 auto;
+            border: 3px solid #FF9800;
+            border-radius: 10px;
+            padding: 40px;
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+            border-bottom: 2px solid #FF9800;
+            padding-bottom: 20px;
+        }
+        
+        .header h1 {
+            color: #FF9800;
+            font-size: 32px;
+            margin-bottom: 10px;
+        }
+        
+        .receipt-number {
+            font-size: 18px;
+            color: #666;
+            font-weight: bold;
+        }
+        
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 15px 0;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .info-row:last-child {
+            border-bottom: none;
+        }
+        
+        .info-label {
+            font-weight: bold;
+            color: #666;
+        }
+        
+        .info-value {
+            color: #333;
+        }
+        
+        .amount-section {
+            margin: 30px 0;
+            text-align: center;
+            background-color: #FFF3E0;
+            padding: 30px;
+            border-radius: 10px;
+        }
+        
+        .amount-label {
+            font-size: 16px;
+            color: #666;
+            margin-bottom: 10px;
+        }
+        
+        .amount-value {
+            font-size: 48px;
+            font-weight: bold;
+            color: #FF9800;
+        }
+        
+        .concept-section {
+            margin: 30px 0;
+            padding: 20px;
+            background-color: #f9f9f9;
+            border-left: 4px solid #FF9800;
+            border-radius: 3px;
+        }
+        
+        .concept-section h3 {
+            color: #FF9800;
+            margin-bottom: 10px;
+            font-size: 16px;
+        }
+        
+        .footer {
+            margin-top: 50px;
+            text-align: center;
+            color: #888;
+            font-size: 12px;
+            padding-top: 20px;
+            border-top: 1px solid #ddd;
+        }
+        
+        .signature-box {
+            margin-top: 60px;
+            text-align: center;
+        }
+        
+        .signature-line {
+            width: 300px;
+            margin: 40px auto 10px;
+            border-top: 2px solid #333;
+        }
+    </style>
+</head>
+<body>
+    <div class="receipt-container">
+        <div class="header">
+            <h1>RECIBO DE PAGO</h1>
+            <div class="receipt-number">N° {{receipt_number}}</div>
+        </div>
+        
+        <div class="info-row">
+            <span class="info-label">Fecha:</span>
+            <span class="info-value">{{receipt_date}}</span>
+        </div>
+        
+        <div class="info-row">
+            <span class="info-label">Recibí de:</span>
+            <span class="info-value">{{received_from}}</span>
+        </div>
+        
+        <div class="info-row">
+            <span class="info-label">Método de Pago:</span>
+            <span class="info-value">{{payment_method}}</span>
+        </div>
+        
+        <div class="amount-section">
+            <div class="amount-label">Cantidad Recibida</div>
+            <div class="amount-value">€{{amount}}</div>
+        </div>
+        
+        <div class="concept-section">
+            <h3>Concepto:</h3>
+            <p>{{concept}}</p>
+        </div>
+        
+        {{#if notes}}
+        <div class="concept-section">
+            <h3>Observaciones:</h3>
+            <p>{{notes}}</p>
+        </div>
+        {{/if}}
+        
+        <div class="signature-box">
+            <div class="signature-line"></div>
+            <p>Firma y Sello</p>
+        </div>
+        
+        <div class="footer">
+            <p>Este documento certifica el pago recibido</p>
+            <p>Generado por Verlyx Hub - {{generation_date}}</p>
+        </div>
+    </div>
+</body>
+</html>

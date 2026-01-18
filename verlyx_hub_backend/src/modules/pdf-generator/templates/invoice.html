@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Factura</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Arial', sans-serif;
+            color: #333;
+            line-height: 1.6;
+            padding: 40px;
+        }
+        
+        .header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 40px;
+            border-bottom: 3px solid #4CAF50;
+            padding-bottom: 20px;
+        }
+        
+        .company-info h1 {
+            color: #4CAF50;
+            font-size: 28px;
+            margin-bottom: 5px;
+        }
+        
+        .invoice-info {
+            text-align: right;
+        }
+        
+        .invoice-info h2 {
+            color: #4CAF50;
+            font-size: 24px;
+            margin-bottom: 10px;
+        }
+        
+        .invoice-number {
+            font-size: 18px;
+            font-weight: bold;
+            color: #666;
+        }
+        
+        .invoice-date {
+            color: #888;
+            font-size: 14px;
+        }
+        
+        .client-section {
+            margin-bottom: 30px;
+            background-color: #f9f9f9;
+            padding: 20px;
+            border-radius: 5px;
+        }
+        
+        .client-section h3 {
+            color: #4CAF50;
+            margin-bottom: 10px;
+            font-size: 18px;
+        }
+        
+        .items-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 30px;
+        }
+        
+        .items-table thead {
+            background-color: #4CAF50;
+            color: white;
+        }
+        
+        .items-table th {
+            padding: 12px;
+            text-align: left;
+            font-weight: bold;
+        }
+        
+        .items-table td {
+            padding: 10px 12px;
+            border-bottom: 1px solid #ddd;
+        }
+        
+        .items-table tbody tr:hover {
+            background-color: #f5f5f5;
+        }
+        
+        .text-right {
+            text-align: right;
+        }
+        
+        .text-center {
+            text-align: center;
+        }
+        
+        .totals-section {
+            display: flex;
+            justify-content: flex-end;
+            margin-bottom: 30px;
+        }
+        
+        .totals-table {
+            width: 300px;
+            border: 2px solid #4CAF50;
+            border-radius: 5px;
+            overflow: hidden;
+        }
+        
+        .totals-table tr {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px 15px;
+        }
+        
+        .totals-table tr:not(:last-child) {
+            border-bottom: 1px solid #ddd;
+        }
+        
+        .totals-table .total-row {
+            background-color: #4CAF50;
+            color: white;
+            font-size: 18px;
+            font-weight: bold;
+        }
+        
+        .notes-section {
+            margin-top: 30px;
+            padding: 20px;
+            background-color: #f9f9f9;
+            border-left: 4px solid #4CAF50;
+            border-radius: 3px;
+        }
+        
+        .notes-section h4 {
+            color: #4CAF50;
+            margin-bottom: 10px;
+        }
+        
+        .footer {
+            margin-top: 50px;
+            text-align: center;
+            color: #888;
+            font-size: 12px;
+            padding-top: 20px;
+            border-top: 1px solid #ddd;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="company-info">
+            <h1>Verlyx Hub</h1>
+            <p>Gestión Empresarial Integral</p>
+        </div>
+        <div class="invoice-info">
+            <h2>FACTURA</h2>
+            <div class="invoice-number">#{{invoice_number}}</div>
+            <div class="invoice-date">Fecha: {{invoice_date}}</div>
+        </div>
+    </div>
+    
+    <div class="client-section">
+        <h3>Facturar a:</h3>
+        <p><strong>{{client_name}}</strong></p>
+        {{#if client_email}}
+        <p>Email: {{client_email}}</p>
+        {{/if}}
+        {{#if client_address}}
+        <p>{{client_address}}</p>
+        {{/if}}
+    </div>
+    
+    <table class="items-table">
+        <thead>
+            <tr>
+                <th>Descripción</th>
+                <th class="text-center">Cantidad</th>
+                <th class="text-right">Precio Unit.</th>
+                <th class="text-right">Total</th>
+            </tr>
+        </thead>
+        <tbody>
+            {{#each items}}
+            <tr>
+                <td>{{this.description}}</td>
+                <td class="text-center">{{this.quantity}}</td>
+                <td class="text-right">€{{this.price}}</td>
+                <td class="text-right">€{{this.total}}</td>
+            </tr>
+            {{/each}}
+        </tbody>
+    </table>
+    
+    <div class="totals-section">
+        <div class="totals-table">
+            <tr>
+                <span>Subtotal:</span>
+                <span>€{{subtotal}}</span>
+            </tr>
+            <tr>
+                <span>IVA ({{tax}}%):</span>
+                <span>€{{tax_amount}}</span>
+            </tr>
+            <tr class="total-row">
+                <span>TOTAL:</span>
+                <span>€{{total}}</span>
+            </tr>
+        </div>
+    </div>
+    
+    {{#if notes}}
+    <div class="notes-section">
+        <h4>Notas:</h4>
+        <p>{{notes}}</p>
+    </div>
+    {{/if}}
+    
+    <div class="footer">
+        <p>Gracias por su preferencia</p>
+        <p>Generado por Verlyx Hub - {{generation_date}}</p>
+    </div>
+</body>
+</html>
