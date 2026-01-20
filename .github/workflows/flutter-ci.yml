@@ -1,0 +1,95 @@
+name: Flutter CI/CD
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'verlyx_hub_flutter/**'
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.0'
+          channel: 'stable'
+      
+      - name: Install dependencies
+        working-directory: verlyx_hub_flutter
+        run: flutter pub get
+      
+      - name: Run code generation
+        working-directory: verlyx_hub_flutter
+        run: flutter pub run build_runner build --delete-conflicting-outputs
+      
+      - name: Analyze code
+        working-directory: verlyx_hub_flutter
+        run: flutter analyze
+      
+      - name: Run tests
+        working-directory: verlyx_hub_flutter
+        run: flutter test --coverage
+      
+      - name: Upload coverage
+        uses: codecov/codecov-action@v3
+        with:
+          files: verlyx_hub_flutter/coverage/lcov.info
+
+  build-android:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.0'
+      
+      - name: Setup Java
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+      
+      - name: Build APK
+        working-directory: verlyx_hub_flutter
+        run: flutter build apk --release
+      
+      - name: Upload APK
+        uses: actions/upload-artifact@v3
+        with:
+          name: app-release.apk
+          path: verlyx_hub_flutter/build/app/outputs/flutter-apk/app-release.apk
+
+  build-windows:
+    needs: test
+    runs-on: windows-latest
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.0'
+      
+      - name: Build Windows
+        working-directory: verlyx_hub_flutter
+        run: flutter build windows --release
+      
+      - name: Upload Windows Build
+        uses: actions/upload-artifact@v3
+        with:
+          name: windows-release
+          path: verlyx_hub_flutter/build/windows/runner/Release/

@@ -1,0 +1,188 @@
+### Test Enhanced Projects API
+### URL base
+@baseUrl = http://localhost:3000/api
+
+### 1. Get all companies (to get company IDs)
+GET {{baseUrl}}/companies
+
+###
+
+### 2. Create a project for PulsarMoon
+POST {{baseUrl}}/projects
+Content-Type: application/json
+
+{
+  "companyId": "REPLACE_WITH_PULSARMOON_ID",
+  "name": "Desarrollo App Móvil PulsarMoon",
+  "description": "Aplicación móvil para gestión de proyectos con Flutter y NestJS",
+  "status": "planning",
+  "priority": "high",
+  "budget": 15000,
+  "spentAmount": 0,
+  "currency": "USD",
+  "startDate": "2025-11-22",
+  "dueDate": "2026-01-15",
+  "progressPercentage": 0,
+  "tags": ["mobile", "flutter", "nestjs"]
+}
+
+###
+
+### 3. Create a project for Verlyx Buildings
+POST {{baseUrl}}/projects
+Content-Type: application/json
+
+{
+  "companyId": "REPLACE_WITH_VERLYX_BUILDINGS_ID",
+  "name": "Sistema de Gestión de Propiedades",
+  "description": "Sistema web para administración de propiedades en construcción",
+  "status": "in_progress",
+  "priority": "critical",
+  "budget": 25000,
+  "spentAmount": 8500,
+  "currency": "USD",
+  "startDate": "2025-10-01",
+  "dueDate": "2025-12-31",
+  "progressPercentage": 45,
+  "tags": ["real-estate", "web", "management"]
+}
+
+###
+
+### 4. Create a project for Verlyx Tourism
+POST {{baseUrl}}/projects
+Content-Type: application/json
+
+{
+  "companyId": "REPLACE_WITH_VERLYX_TOURISM_ID",
+  "name": "Plataforma de Reservas Turísticas",
+  "description": "Sistema de reservas online para paquetes turísticos",
+  "status": "backlog",
+  "priority": "medium",
+  "budget": 12000,
+  "spentAmount": 0,
+  "currency": "USD",
+  "startDate": "2026-02-01",
+  "dueDate": "2026-04-30",
+  "progressPercentage": 0,
+  "tags": ["tourism", "booking", "web"]
+}
+
+###
+
+### 5. Get all projects (no filter)
+GET {{baseUrl}}/projects
+
+###
+
+### 6. Get projects filtered by company
+GET {{baseUrl}}/projects?companyId=REPLACE_WITH_PULSARMOON_ID
+
+###
+
+### 7. Get projects by status
+GET {{baseUrl}}/projects?status=in_progress
+
+###
+
+### 8. Get projects by priority
+GET {{baseUrl}}/projects?priority=high
+
+###
+
+### 9. Search projects by name
+GET {{baseUrl}}/projects?search=móvil
+
+###
+
+### 10. Get project stats (all companies)
+GET {{baseUrl}}/projects/stats
+
+###
+
+### 11. Get project stats (filtered by company)
+GET {{baseUrl}}/projects/stats?companyId=REPLACE_WITH_PULSARMOON_ID
+
+###
+
+### 12. Get single project by ID
+GET {{baseUrl}}/projects/REPLACE_WITH_PROJECT_ID
+
+###
+
+### 13. Update project status (test status transition)
+PATCH {{baseUrl}}/projects/REPLACE_WITH_PROJECT_ID
+Content-Type: application/json
+
+{
+  "status": "in_progress",
+  "progressPercentage": 15
+}
+
+###
+
+### 14. Update project budget tracking
+PATCH {{baseUrl}}/projects/REPLACE_WITH_PROJECT_ID
+Content-Type: application/json
+
+{
+  "spentAmount": 3500,
+  "progressPercentage": 25
+}
+
+###
+
+### 15. Test invalid status transition (should fail)
+PATCH {{baseUrl}}/projects/REPLACE_WITH_PROJECT_ID
+Content-Type: application/json
+
+{
+  "status": "done"
+}
+
+###
+
+### 16. Complete a project
+PATCH {{baseUrl}}/projects/REPLACE_WITH_PROJECT_ID
+Content-Type: application/json
+
+{
+  "status": "review"
+}
+
+###
+
+PATCH {{baseUrl}}/projects/REPLACE_WITH_PROJECT_ID
+Content-Type: application/json
+
+{
+  "status": "done",
+  "progressPercentage": 100
+}
+
+###
+
+### 17. Get overdue projects (filter by date)
+GET {{baseUrl}}/projects?dueDateTo=2025-11-22
+
+###
+
+### 18. Archive a project
+PATCH {{baseUrl}}/projects/REPLACE_WITH_PROJECT_ID
+Content-Type: application/json
+
+{
+  "isArchived": true
+}
+
+###
+
+### 19. Get projects excluding archived
+GET {{baseUrl}}/projects?includeArchived=false
+
+###
+
+### 20. Delete a project
+DELETE {{baseUrl}}/projects/REPLACE_WITH_PROJECT_ID
+
+###
