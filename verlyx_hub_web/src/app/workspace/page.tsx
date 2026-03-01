@@ -725,11 +725,13 @@ export default function WorkspacePage() {
             {/* Page Header */}
             <div className="px-16 pt-16 pb-4">
               <div className="flex items-center gap-4 mb-2">
-                <button
-                  onClick={() => setShowIconPicker(!showIconPicker)}
-                  className="text-5xl hover:bg-gray-800 p-2 rounded-lg transition-colors relative"
-                >
-                  {selectedPage.icon}
+                <div className="relative">
+                  <button
+                    onClick={() => setShowIconPicker(!showIconPicker)}
+                    className="text-5xl hover:bg-gray-800 p-2 rounded-lg transition-colors"
+                  >
+                    {selectedPage.icon}
+                  </button>
                   {showIconPicker && (
                     <div className="absolute top-full left-0 mt-2 p-3 bg-gray-800 border border-gray-700 rounded-xl shadow-xl z-50 grid grid-cols-5 gap-2">
                       {pageIcons.map(icon => (
@@ -747,7 +749,7 @@ export default function WorkspacePage() {
                       ))}
                     </div>
                   )}
-                </button>
+                </div>
                 <input
                   type="text"
                   value={selectedPage.title}

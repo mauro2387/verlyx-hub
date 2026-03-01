@@ -1425,3 +1425,1245 @@ export const usePdfGeneratorStore = create<PdfGeneratorState>((set, get) => ({
     set((state) => ({ generatedPdfs: state.generatedPdfs.filter((p) => p.id !== id) }));
   },
 }));
+
+// ==================== Financial System Stores ====================
+import { financial } from './supabase';
+import type { Category, Account, Expense, Income, Budget, Transaction, FinancialStats } from './types';
+
+// Categories Store
+interface CategoriesState {
+  categories: Category[];
+  isLoading: boolean;
+  fetchCategories: () => Promise<void>;
+  addCategory: (category: Omit<Category, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>;
+  updateCategory: (id: string, data: Partial<Category>) => Promise<void>;
+  deleteCategory: (id: string) => Promise<void>;
+  getCategoriesByType: (type: 'expense' | 'income') => Category[];
+}
+
+export const useCategoriesStore = create<CategoriesState>((set, get) => ({
+  categories: [],
+  isLoading: false,
+  fetchCategories: async () => {
+    set({ isLoading: true });
+    const companyId = useCompanyStore.getState().selectedCompanyId;
+    const { data, error } = await financial.categories.getAll(companyId || undefined);
+    
+    if (data && !error) {
+      const categories: Category[] = data.map(c => ({
+        id: c.id,
+        myCompanyId: c.my_company_id,
+        name: c.name,
+        type: c.type,
+        color: c.color,
+        icon: c.icon,
+        parentId: c.parent_id,
+        isActive: c.is_active,
+        createdBy: c.created_by,
+        createdAt: c.created_at,
+        updatedAt: c.updated_at,
+      }));
+      set({ categories, isLoading: false });
+    } else {
+      set({ categories: [], isLoading: false });
+    }
+  },
+  addCategory: async (data) => {
+    const companyId = useCompanyStore.getState().selectedCompanyId;
+    if (!companyId) return;
+    
+    const { data: newCat, error } = await financial.categories.create({
+      my_company_id: companyId,
+      name: data.name,
+      type: data.type,
+      color: data.color || null,
+      icon: data.icon || null,
+      parent_id: data.parentId || null,
+      is_active: data.isActive ?? true,
+    });
+    
+    if (newCat && !error) {
+      get().fetchCategories();
+    }
+  },
+  updateCategory: async (id, data) => {
+    const { error } = await financial.categories.update(id, {
+      name: data.name,
+      type: data.type,
+      color: data.color,
+      icon: data.icon,
+      is_active: data.isActive,
+    });
+    if (!error) {
+      get().fetchCategories();
+    }
+  },
+  deleteCategory: async (id) => {
+    const { error } = await financial.categories.delete(id);
+    if (!error) {
+      set((state) => ({ categories: state.categories.filter((c) => c.id !== id) }));
+    }
+  },
+  getCategoriesByType: (type) => {
+    return get().categories.filter((c) => c.type === type && c.isActive);
+  },
+}));
+
+// Accounts Store
+interface AccountsState {
+  accounts: Account[];
+  isLoading: boolean;
+  fetchAccounts: () => Promise<void>;
+  addAccount: (account: Omit<Account, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>;
+  updateAccount: (id: string, data: Partial<Account>) => Promise<void>;
+  deleteAccount: (id: string) => Promise<void>;
+  getTotalBalance: () => number;
+  getAccountById: (id: string) => Account | undefined;
+}
+
+export const useAccountsStore = create<AccountsState>((set, get) => ({
+  accounts: [],
+  isLoading: false,
+  fetchAccounts: async () => {
+    set({ isLoading: true });
+    const companyId = useCompanyStore.getState().selectedCompanyId;
+    const { data, error } = await financial.accounts.getAll(companyId || undefined);
+    
+    if (data && !error) {
+      const accounts: Account[] = data.map(a => ({
+        id: a.id,
+        myCompanyId: a.my_company_id,
+        name: a.name,
+        type: a.type,
+        currency: a.currency,
+        bankName: a.bank_name,
+        accountNumber: a.account_number,
+        initialBalance: a.initial_balance,
+        currentBalance: a.current_balance,
+        isActive: a.is_active,
+        color: a.color,
+        icon: a.icon,
+        createdBy: a.created_by,
+        createdAt: a.created_at,
+        updatedAt: a.updated_at,
+      }));
+      set({ accounts, isLoading: false });
+    } else {
+      set({ accounts: [], isLoading: false });
+    }
+  },
+  addAccount: async (data) => {
+    const companyId = useCompanyStore.getState().selectedCompanyId;
+    if (!companyId) return;
+    
+    const { data: newAcc, error } = await financial.accounts.create({
+      my_company_id: companyId,
+      name: data.name,
+      type: data.type,
+      currency: data.currency || 'UYU',
+      bank_name: data.bankName || null,
+      account_number: data.accountNumber || null,
+      initial_balance: data.initialBalance || 0,
+      current_balance: data.currentBalance || data.initialBalance || 0,
+      is_active: data.isActive ?? true,
+      color: data.color || null,
+      icon: data.icon || null,
+    });
+    
+    if (newAcc && !error) {
+      get().fetchAccounts();
+    }
+  },
+  updateAccount: async (id, data) => {
+    const { error } = await financial.accounts.update(id, {
+      name: data.name,
+      type: data.type,
+      currency: data.currency,
+      bank_name: data.bankName,
+      account_number: data.accountNumber,
+      is_active: data.isActive,
+      color: data.color,
+      icon: data.icon,
+    });
+    if (!error) {
+      get().fetchAccounts();
+    }
+  },
+  deleteAccount: async (id) => {
+    const { error } = await financial.accounts.delete(id);
+    if (!error) {
+      set((state) => ({ accounts: state.accounts.filter((a) => a.id !== id) }));
+    }
+  },
+  getTotalBalance: () => {
+    return get().accounts.reduce((sum, a) => sum + (a.currentBalance || 0), 0);
+  },
+  getAccountById: (id) => {
+    return get().accounts.find((a) => a.id === id);
+  },
+}));
+
+// Expenses Store
+interface ExpensesState {
+  expenses: Expense[];
+  isLoading: boolean;
+  filter: {
+    search: string;
+    categoryId: string | null;
+    status: string | null;
+    startDate: string | null;
+    endDate: string | null;
+  };
+  fetchExpenses: () => Promise<void>;
+  addExpense: (expense: Omit<Expense, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>;
+  updateExpense: (id: string, data: Partial<Expense>) => Promise<void>;
+  deleteExpense: (id: string) => Promise<void>;
+  setFilter: (filter: Partial<ExpensesState['filter']>) => void;
+  getFilteredExpenses: () => Expense[];
+  getTotalExpenses: () => number;
+}
+
+export const useExpensesStore = create<ExpensesState>((set, get) => ({
+  expenses: [],
+  isLoading: false,
+  filter: {
+    search: '',
+    categoryId: null,
+    status: null,
+    startDate: null,
+    endDate: null,
+  },
+  fetchExpenses: async () => {
+    set({ isLoading: true });
+    const companyId = useCompanyStore.getState().selectedCompanyId;
+    const { filter } = get();
+    
+    const { data, error } = await financial.expenses.getAll(companyId || undefined, {
+      startDate: filter.startDate || undefined,
+      endDate: filter.endDate || undefined,
+      categoryId: filter.categoryId || undefined,
+      status: filter.status || undefined,
+    });
+    
+    if (data && !error) {
+      const expenses: Expense[] = data.map(e => ({
+        id: e.id,
+        myCompanyId: e.my_company_id,
+        description: e.description,
+        amount: e.amount,
+        currency: e.currency,
+        categoryId: e.category_id,
+        category: e.category ? {
+          id: e.category.id,
+          myCompanyId: e.category.my_company_id,
+          name: e.category.name,
+          type: e.category.type,
+          color: e.category.color,
+          icon: e.category.icon,
+          parentId: e.category.parent_id,
+          isActive: e.category.is_active,
+          createdBy: e.category.created_by,
+          createdAt: e.category.created_at,
+          updatedAt: e.category.updated_at,
+        } : null,
+        supplierName: e.supplier_name,
+        supplierTaxId: e.supplier_tax_id,
+        accountId: e.account_id,
+        account: e.account ? {
+          id: e.account.id,
+          myCompanyId: e.account.my_company_id,
+          name: e.account.name,
+          type: e.account.type,
+          currency: e.account.currency,
+          bankName: e.account.bank_name,
+          accountNumber: e.account.account_number,
+          initialBalance: e.account.initial_balance,
+          currentBalance: e.account.current_balance,
+          isActive: e.account.is_active,
+          color: e.account.color,
+          icon: e.account.icon,
+          createdBy: e.account.created_by,
+          createdAt: e.account.created_at,
+          updatedAt: e.account.updated_at,
+        } : null,
+        paymentMethod: e.payment_method,
+        paymentDate: e.payment_date,
+        invoiceNumber: e.invoice_number,
+        invoiceDate: e.invoice_date,
+        projectId: e.project_id,
+        dealId: e.deal_id,
+        attachmentUrls: e.attachment_urls,
+        tags: e.tags,
+        notes: e.notes,
+        status: e.status,
+        isRecurring: e.is_recurring,
+        recurringFrequency: e.recurring_frequency,
+        createdBy: e.created_by,
+        createdAt: e.created_at,
+        updatedAt: e.updated_at,
+      }));
+      set({ expenses, isLoading: false });
+    } else {
+      set({ expenses: [], isLoading: false });
+    }
+  },
+  addExpense: async (data) => {
+    const companyId = useCompanyStore.getState().selectedCompanyId;
+    if (!companyId) return;
+    
+    const { data: newExp, error } = await financial.expenses.create({
+      my_company_id: companyId,
+      description: data.description,
+      amount: data.amount,
+      currency: data.currency || 'UYU',
+      category_id: data.categoryId || null,
+      supplier_name: data.supplierName || null,
+      supplier_tax_id: data.supplierTaxId || null,
+      account_id: data.accountId || null,
+      payment_method: data.paymentMethod || 'cash',
+      payment_date: data.paymentDate,
+      invoice_number: data.invoiceNumber || null,
+      invoice_date: data.invoiceDate || null,
+      project_id: data.projectId || null,
+      deal_id: data.dealId || null,
+      attachment_urls: data.attachmentUrls || null,
+      tags: data.tags || null,
+      notes: data.notes || null,
+      status: data.status || 'paid',
+      is_recurring: data.isRecurring || false,
+      recurring_frequency: data.recurringFrequency || null,
+    });
+    
+    if (newExp && !error) {
+      get().fetchExpenses();
+    }
+  },
+  updateExpense: async (id, data) => {
+    const { error } = await financial.expenses.update(id, {
+      description: data.description,
+      amount: data.amount,
+      currency: data.currency,
+      category_id: data.categoryId,
+      supplier_name: data.supplierName,
+      supplier_tax_id: data.supplierTaxId,
+      account_id: data.accountId,
+      payment_method: data.paymentMethod,
+      payment_date: data.paymentDate,
+      invoice_number: data.invoiceNumber,
+      invoice_date: data.invoiceDate,
+      project_id: data.projectId,
+      notes: data.notes,
+      status: data.status,
+      is_recurring: data.isRecurring,
+      recurring_frequency: data.recurringFrequency,
+    });
+    if (!error) {
+      get().fetchExpenses();
+    }
+  },
+  deleteExpense: async (id) => {
+    const { error } = await financial.expenses.delete(id);
+    if (!error) {
+      set((state) => ({ expenses: state.expenses.filter((e) => e.id !== id) }));
+    }
+  },
+  setFilter: (filter) => {
+    set((state) => ({ filter: { ...state.filter, ...filter } }));
+  },
+  getFilteredExpenses: () => {
+    const { expenses, filter } = get();
+    return expenses.filter((expense) => {
+      if (filter.search && !expense.description.toLowerCase().includes(filter.search.toLowerCase())) {
+        return false;
+      }
+      if (filter.categoryId && expense.categoryId !== filter.categoryId) {
+        return false;
+      }
+      if (filter.status && expense.status !== filter.status) {
+        return false;
+      }
+      return true;
+    });
+  },
+  getTotalExpenses: () => {
+    return get().expenses.reduce((sum, e) => sum + e.amount, 0);
+  },
+}));
+
+// Incomes Store
+interface IncomesState {
+  incomes: Income[];
+  isLoading: boolean;
+  filter: {
+    search: string;
+    categoryId: string | null;
+    status: string | null;
+    startDate: string | null;
+    endDate: string | null;
+  };
+  fetchIncomes: () => Promise<void>;
+  addIncome: (income: Omit<Income, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>;
+  updateIncome: (id: string, data: Partial<Income>) => Promise<void>;
+  deleteIncome: (id: string) => Promise<void>;
+  setFilter: (filter: Partial<IncomesState['filter']>) => void;
+  getFilteredIncomes: () => Income[];
+  getTotalIncomes: () => number;
+  getPendingIncomes: () => Income[];
+  getOverdueIncomes: () => Income[];
+}
+
+export const useIncomesStore = create<IncomesState>((set, get) => ({
+  incomes: [],
+  isLoading: false,
+  filter: {
+    search: '',
+    categoryId: null,
+    status: null,
+    startDate: null,
+    endDate: null,
+  },
+  fetchIncomes: async () => {
+    set({ isLoading: true });
+    const companyId = useCompanyStore.getState().selectedCompanyId;
+    const { filter } = get();
+    
+    const { data, error } = await financial.incomes.getAll(companyId || undefined, {
+      startDate: filter.startDate || undefined,
+      endDate: filter.endDate || undefined,
+      categoryId: filter.categoryId || undefined,
+      status: filter.status || undefined,
+    });
+    
+    if (data && !error) {
+      const incomes: Income[] = data.map(i => ({
+        id: i.id,
+        myCompanyId: i.my_company_id,
+        description: i.description,
+        amount: i.amount,
+        currency: i.currency,
+        categoryId: i.category_id,
+        category: i.category ? {
+          id: i.category.id,
+          myCompanyId: i.category.my_company_id,
+          name: i.category.name,
+          type: i.category.type,
+          color: i.category.color,
+          icon: i.category.icon,
+          parentId: i.category.parent_id,
+          isActive: i.category.is_active,
+          createdBy: i.category.created_by,
+          createdAt: i.category.created_at,
+          updatedAt: i.category.updated_at,
+        } : null,
+        clientId: i.client_id,
+        clientName: i.client_name,
+        accountId: i.account_id,
+        account: i.account ? {
+          id: i.account.id,
+          myCompanyId: i.account.my_company_id,
+          name: i.account.name,
+          type: i.account.type,
+          currency: i.account.currency,
+          bankName: i.account.bank_name,
+          accountNumber: i.account.account_number,
+          initialBalance: i.account.initial_balance,
+          currentBalance: i.account.current_balance,
+          isActive: i.account.is_active,
+          color: i.account.color,
+          icon: i.account.icon,
+          createdBy: i.account.created_by,
+          createdAt: i.account.created_at,
+          updatedAt: i.account.updated_at,
+        } : null,
+        paymentMethod: i.payment_method,
+        paymentDate: i.payment_date,
+        invoiceNumber: i.invoice_number,
+        invoiceDate: i.invoice_date,
+        projectId: i.project_id,
+        dealId: i.deal_id,
+        paymentLinkId: i.payment_link_id,
+        attachmentUrls: i.attachment_urls,
+        tags: i.tags,
+        notes: i.notes,
+        status: i.status,
+        dueDate: i.due_date,
+        isRecurring: i.is_recurring,
+        recurringFrequency: i.recurring_frequency,
+        createdBy: i.created_by,
+        createdAt: i.created_at,
+        updatedAt: i.updated_at,
+      }));
+      set({ incomes, isLoading: false });
+    } else {
+      set({ incomes: [], isLoading: false });
+    }
+  },
+  addIncome: async (data) => {
+    const companyId = useCompanyStore.getState().selectedCompanyId;
+    if (!companyId) return;
+    
+    const { data: newInc, error } = await financial.incomes.create({
+      my_company_id: companyId,
+      description: data.description,
+      amount: data.amount,
+      currency: data.currency || 'UYU',
+      category_id: data.categoryId || null,
+      client_id: data.clientId || null,
+      client_name: data.clientName || null,
+      account_id: data.accountId || null,
+      payment_method: data.paymentMethod || 'transfer',
+      payment_date: data.paymentDate || null,
+      invoice_number: data.invoiceNumber || null,
+      invoice_date: data.invoiceDate || null,
+      project_id: data.projectId || null,
+      deal_id: data.dealId || null,
+      payment_link_id: data.paymentLinkId || null,
+      attachment_urls: data.attachmentUrls || null,
+      tags: data.tags || null,
+      notes: data.notes || null,
+      status: data.status || 'pending',
+      due_date: data.dueDate || null,
+      is_recurring: data.isRecurring || false,
+      recurring_frequency: data.recurringFrequency || null,
+    });
+    
+    if (newInc && !error) {
+      get().fetchIncomes();
+    }
+  },
+  updateIncome: async (id, data) => {
+    const { error } = await financial.incomes.update(id, {
+      description: data.description,
+      amount: data.amount,
+      currency: data.currency,
+      category_id: data.categoryId,
+      client_id: data.clientId,
+      client_name: data.clientName,
+      account_id: data.accountId,
+      payment_method: data.paymentMethod,
+      payment_date: data.paymentDate,
+      invoice_number: data.invoiceNumber,
+      invoice_date: data.invoiceDate,
+      project_id: data.projectId,
+      notes: data.notes,
+      status: data.status,
+      due_date: data.dueDate,
+      is_recurring: data.isRecurring,
+      recurring_frequency: data.recurringFrequency,
+    });
+    if (!error) {
+      get().fetchIncomes();
+    }
+  },
+  deleteIncome: async (id) => {
+    const { error } = await financial.incomes.delete(id);
+    if (!error) {
+      set((state) => ({ incomes: state.incomes.filter((i) => i.id !== id) }));
+    }
+  },
+  setFilter: (filter) => {
+    set((state) => ({ filter: { ...state.filter, ...filter } }));
+  },
+  getFilteredIncomes: () => {
+    const { incomes, filter } = get();
+    return incomes.filter((income) => {
+      if (filter.search && !income.description.toLowerCase().includes(filter.search.toLowerCase())) {
+        return false;
+      }
+      if (filter.categoryId && income.categoryId !== filter.categoryId) {
+        return false;
+      }
+      if (filter.status && income.status !== filter.status) {
+        return false;
+      }
+      return true;
+    });
+  },
+  getTotalIncomes: () => {
+    return get().incomes.reduce((sum, i) => sum + i.amount, 0);
+  },
+  getPendingIncomes: () => {
+    return get().incomes.filter((i) => i.status === 'pending');
+  },
+  getOverdueIncomes: () => {
+    const today = new Date().toISOString().split('T')[0];
+    return get().incomes.filter((i) => i.status === 'pending' && i.dueDate && i.dueDate < today);
+  },
+}));
+
+// Budgets Store
+interface BudgetsState {
+  budgets: Budget[];
+  isLoading: boolean;
+  fetchBudgets: () => Promise<void>;
+  addBudget: (budget: Omit<Budget, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>;
+  updateBudget: (id: string, data: Partial<Budget>) => Promise<void>;
+  deleteBudget: (id: string) => Promise<void>;
+  getBudgetStatus: (budgetId: string, spent: number) => { percentage: number; status: 'ok' | 'warning' | 'exceeded' };
+}
+
+export const useBudgetsStore = create<BudgetsState>((set, get) => ({
+  budgets: [],
+  isLoading: false,
+  fetchBudgets: async () => {
+    set({ isLoading: true });
+    const companyId = useCompanyStore.getState().selectedCompanyId;
+    const { data, error } = await financial.budgets.getAll(companyId || undefined);
+    
+    if (data && !error) {
+      const budgets: Budget[] = data.map(b => ({
+        id: b.id,
+        myCompanyId: b.my_company_id,
+        name: b.name,
+        period: b.period,
+        year: b.year,
+        month: b.month,
+        categoryId: b.category_id,
+        category: b.category ? {
+          id: b.category.id,
+          myCompanyId: b.category.my_company_id,
+          name: b.category.name,
+          type: b.category.type,
+          color: b.category.color,
+          icon: b.category.icon,
+          parentId: b.category.parent_id,
+          isActive: b.category.is_active,
+          createdBy: b.category.created_by,
+          createdAt: b.category.created_at,
+          updatedAt: b.category.updated_at,
+        } : null,
+        plannedAmount: b.planned_amount,
+        currency: b.currency,
+        isActive: b.is_active,
+        alertPercentage: b.alert_percentage,
+        createdBy: b.created_by,
+        createdAt: b.created_at,
+        updatedAt: b.updated_at,
+      }));
+      set({ budgets, isLoading: false });
+    } else {
+      set({ budgets: [], isLoading: false });
+    }
+  },
+  addBudget: async (data) => {
+    const companyId = useCompanyStore.getState().selectedCompanyId;
+    if (!companyId) return;
+    
+    const { data: newBudget, error } = await financial.budgets.create({
+      my_company_id: companyId,
+      name: data.name,
+      period: data.period,
+      year: data.year,
+      month: data.month ?? null,
+      category_id: data.categoryId || null,
+      planned_amount: data.plannedAmount,
+      currency: data.currency || 'UYU',
+      is_active: data.isActive ?? true,
+      alert_percentage: data.alertPercentage || 80,
+    });
+    
+    if (newBudget && !error) {
+      get().fetchBudgets();
+    }
+  },
+  updateBudget: async (id, data) => {
+    const { error } = await financial.budgets.update(id, {
+      name: data.name,
+      period: data.period,
+      year: data.year,
+      month: data.month,
+      category_id: data.categoryId,
+      planned_amount: data.plannedAmount,
+      is_active: data.isActive,
+      alert_percentage: data.alertPercentage,
+    });
+    if (!error) {
+      get().fetchBudgets();
+    }
+  },
+  deleteBudget: async (id) => {
+    const { error } = await financial.budgets.delete(id);
+    if (!error) {
+      set((state) => ({ budgets: state.budgets.filter((b) => b.id !== id) }));
+    }
+  },
+  getBudgetStatus: (budgetId, spent) => {
+    const budget = get().budgets.find((b) => b.id === budgetId);
+    if (!budget) return { percentage: 0, status: 'ok' as const };
+    
+    const percentage = (spent / budget.plannedAmount) * 100;
+    let status: 'ok' | 'warning' | 'exceeded' = 'ok';
+    if (percentage >= 100) status = 'exceeded';
+    else if (percentage >= budget.alertPercentage) status = 'warning';
+    
+    return { percentage, status };
+  },
+}));
+
+// Financial Stats Store (for dashboard)
+interface FinancialStatsState {
+  stats: FinancialStats | null;
+  isLoading: boolean;
+  fetchStats: () => Promise<void>;
+  getCashFlow: (year: number) => Promise<{ month: number; income: number; expense: number; net: number }[]>;
+}
+
+export const useFinancialStatsStore = create<FinancialStatsState>((set, get) => ({
+  stats: null,
+  isLoading: false,
+  fetchStats: async () => {
+    set({ isLoading: true });
+    const companyId = useCompanyStore.getState().selectedCompanyId;
+    if (!companyId) {
+      set({ stats: null, isLoading: false });
+      return;
+    }
+    
+    const currentYear = new Date().getFullYear();
+    
+    // Get P&L data
+    const { data: plData } = await financial.reports.getProfitLoss(companyId, currentYear);
+    
+    // Get pending/overdue incomes
+    const { data: pendingIncomes } = await financial.incomes.getPendingIncomes(companyId);
+    const { data: overdueIncomes } = await financial.incomes.getOverdueIncomes(companyId);
+    
+    // Get total balance
+    const { data: totalBalance } = await financial.accounts.getTotalBalance(companyId);
+    
+    const pendingAmount = (pendingIncomes || []).reduce((sum, i) => sum + i.amount, 0);
+    const overdueAmount = (overdueIncomes || []).reduce((sum, i) => sum + i.amount, 0);
+    
+    set({
+      stats: {
+        totalIncome: plData?.totalIncome || 0,
+        totalExpense: plData?.totalExpense || 0,
+        netProfit: plData?.netProfit || 0,
+        profitMargin: plData?.profitMargin || 0,
+        pendingIncomes: (pendingIncomes || []).length,
+        pendingIncomesAmount: pendingAmount,
+        overdueIncomes: (overdueIncomes || []).length,
+        overdueIncomesAmount: overdueAmount,
+        totalBalance: totalBalance || 0,
+        monthlyData: plData?.monthlyData || [],
+      },
+      isLoading: false,
+    });
+  },
+  getCashFlow: async (year) => {
+    const companyId = useCompanyStore.getState().selectedCompanyId;
+    if (!companyId) return [];
+    
+    const { data } = await financial.reports.getCashFlow(companyId, year);
+    return data || [];
+  },
+}));
+
+// ==========================================
+// CRM ADVANCED STORES
+// ==========================================
+
+import { crm } from './supabase';
+import type { 
+  ContactActivity, 
+  ClientLeadScore, 
+  ClientSegment, 
+  PendingFollowUp,
+  ClientCRMSummary,
+  ContactActivityType,
+  CommunicationDirection,
+  InteractionSentiment,
+} from './types';
+
+// ==========================================
+// CONTACT ACTIVITIES STORE
+// ==========================================
+
+interface ContactActivitiesState {
+  activities: ContactActivity[];
+  isLoading: boolean;
+  error: string | null;
+  
+  // Actions
+  fetchActivities: (contactId?: string) => Promise<void>;
+  fetchByContact: (contactId: string) => Promise<ContactActivity[]>;
+  createActivity: (activity: {
+    contactId: string;
+    activityType: ContactActivityType;
+    direction?: CommunicationDirection;
+    sentiment?: InteractionSentiment;
+    subject?: string;
+    description?: string;
+    outcome?: string;
+    durationMinutes?: number;
+    followUpDate?: string;
+    followUpNotes?: string;
+    dealId?: string;
+    projectId?: string;
+  }) => Promise<string | null>;
+  updateActivity: (id: string, updates: Partial<ContactActivity>) => Promise<void>;
+  deleteActivity: (id: string) => Promise<void>;
+  markFollowUpDone: (id: string) => Promise<void>;
+  
+  // Quick logging
+  logCall: (contactId: string, subject: string, description?: string, durationMinutes?: number) => Promise<string | null>;
+  logEmail: (contactId: string, subject: string, description?: string) => Promise<string | null>;
+  logMeeting: (contactId: string, subject: string, description?: string, durationMinutes?: number) => Promise<string | null>;
+  logNote: (contactId: string, subject: string, description?: string) => Promise<string | null>;
+}
+
+export const useContactActivitiesStore = create<ContactActivitiesState>((set, get) => ({
+  activities: [],
+  isLoading: false,
+  error: null,
+  
+  fetchActivities: async (contactId) => {
+    const companyId = useCompanyStore.getState().selectedCompanyId;
+    if (!companyId) return;
+    
+    set({ isLoading: true, error: null });
+    
+    const { data, error } = await crm.activities.getAll(companyId, { 
+      contactId,
+      limit: 100 
+    });
+    
+    set({
+      activities: data || [],
+      isLoading: false,
+      error: error?.message || null,
+    });
+  },
+  
+  fetchByContact: async (contactId) => {
+    const companyId = useCompanyStore.getState().selectedCompanyId;
+    if (!companyId) return [];
+    
+    const { data } = await crm.activities.getByContact(companyId, contactId, 50);
+    return data || [];
+  },
+  
+  createActivity: async (activity) => {
+    const companyId = useCompanyStore.getState().selectedCompanyId;
+    if (!companyId) return null;
+    
+    const { data: activityId, error } = await crm.activities.create({
+      myCompanyId: companyId,
+      ...activity,
+    });
+    
+    if (error) {
+      set({ error: error.message });
+      return null;
+    }
+    
+    // Refresh activities
+    await get().fetchActivities(activity.contactId);
+    return activityId;
+  },
+  
+  updateActivity: async (id, updates) => {
+    const { error } = await crm.activities.update(id, {
+      activityType: updates.activityType,
+      direction: updates.direction,
+      sentiment: updates.sentiment,
+      subject: updates.subject || undefined,
+      description: updates.description || undefined,
+      outcome: updates.outcome || undefined,
+      durationMinutes: updates.durationMinutes || undefined,
+      followUpDate: updates.followUpDate || undefined,
+      followUpNotes: updates.followUpNotes || undefined,
+      isFollowUpDone: updates.isFollowUpDone,
+    });
+    
+    if (!error) {
+      set(state => ({
+        activities: state.activities.map(a => 
+          a.id === id ? { ...a, ...updates } : a
+        ),
+      }));
+    }
+  },
+  
+  deleteActivity: async (id) => {
+    const { error } = await crm.activities.delete(id);
+    
+    if (!error) {
+      set(state => ({
+        activities: state.activities.filter(a => a.id !== id),
+      }));
+    }
+  },
+  
+  markFollowUpDone: async (id) => {
+    await get().updateActivity(id, { isFollowUpDone: true });
+  },
+  
+  // Quick logging methods
+  logCall: async (contactId, subject, description, durationMinutes) => {
+    const companyId = useCompanyStore.getState().selectedCompanyId;
+    if (!companyId) return null;
+    
+    const { data } = await crm.activities.logCall(companyId, contactId, {
+      subject,
+      description,
+      durationMinutes,
+    });
+    
+    if (data) await get().fetchActivities(contactId);
+    return data;
+  },
+  
+  logEmail: async (contactId, subject, description) => {
+    const companyId = useCompanyStore.getState().selectedCompanyId;
+    if (!companyId) return null;
+    
+    const { data } = await crm.activities.logEmail(companyId, contactId, {
+      subject,
+      description,
+    });
+    
+    if (data) await get().fetchActivities(contactId);
+    return data;
+  },
+  
+  logMeeting: async (contactId, subject, description, durationMinutes) => {
+    const companyId = useCompanyStore.getState().selectedCompanyId;
+    if (!companyId) return null;
+    
+    const { data } = await crm.activities.logMeeting(companyId, contactId, {
+      subject,
+      description,
+      durationMinutes,
+    });
+    
+    if (data) await get().fetchActivities(contactId);
+    return data;
+  },
+  
+  logNote: async (contactId, subject, description) => {
+    const companyId = useCompanyStore.getState().selectedCompanyId;
+    if (!companyId) return null;
+    
+    const { data } = await crm.activities.logNote(companyId, contactId, {
+      subject,
+      description,
+    });
+    
+    if (data) await get().fetchActivities(contactId);
+    return data;
+  },
+}));
+
+// ==========================================
+// LEAD SCORES STORE
+// ==========================================
+
+interface LeadScoresState {
+  scores: ClientLeadScore[];
+  isLoading: boolean;
+  error: string | null;
+  
+  // Actions
+  fetchScores: (filters?: { temperature?: string; minScore?: number }) => Promise<void>;
+  getContactScore: (contactId: string) => Promise<ClientLeadScore | null>;
+  recalculateScore: (contactId: string) => Promise<number | null>;
+  getHotLeads: (limit?: number) => Promise<ClientLeadScore[]>;
+  
+  // Helpers
+  getScoreByContactId: (contactId: string) => ClientLeadScore | undefined;
+  getTemperatureColor: (temperature: string) => string;
+  getTemperatureLabel: (temperature: string) => string;
+}
+
+export const useLeadScoresStore = create<LeadScoresState>((set, get) => ({
+  scores: [],
+  isLoading: false,
+  error: null,
+  
+  fetchScores: async (filters) => {
+    const companyId = useCompanyStore.getState().selectedCompanyId;
+    if (!companyId) return;
+    
+    set({ isLoading: true, error: null });
+    
+    const { data, error } = await crm.scores.getAll(companyId, filters);
+    
+    set({
+      scores: data || [],
+      isLoading: false,
+      error: error?.message || null,
+    });
+  },
+  
+  getContactScore: async (contactId) => {
+    const companyId = useCompanyStore.getState().selectedCompanyId;
+    if (!companyId) return null;
+    
+    const { data } = await crm.scores.getByContact(companyId, contactId);
+    return data;
+  },
+  
+  recalculateScore: async (contactId) => {
+    const companyId = useCompanyStore.getState().selectedCompanyId;
+    if (!companyId) return null;
+    
+    const { data, error } = await crm.scores.recalculate(companyId, contactId);
+    
+    if (!error) {
+      // Refresh scores
+      await get().fetchScores();
+    }
+    
+    return data;
+  },
+  
+  getHotLeads: async (limit = 10) => {
+    const companyId = useCompanyStore.getState().selectedCompanyId;
+    if (!companyId) return [];
+    
+    const { data } = await crm.scores.getHotLeads(companyId, limit);
+    return data || [];
+  },
+  
+  getScoreByContactId: (contactId) => {
+    return get().scores.find(s => s.contactId === contactId);
+  },
+  
+  getTemperatureColor: (temperature) => {
+    const colors: Record<string, string> = {
+      cold: 'bg-blue-100 text-blue-700',
+      warm: 'bg-yellow-100 text-yellow-700',
+      hot: 'bg-orange-100 text-orange-700',
+      very_hot: 'bg-red-100 text-red-700',
+    };
+    return colors[temperature] || colors.cold;
+  },
+  
+  getTemperatureLabel: (temperature) => {
+    const labels: Record<string, string> = {
+      cold: 'Frío',
+      warm: 'Tibio',
+      hot: 'Caliente',
+      very_hot: 'Muy Caliente',
+    };
+    return labels[temperature] || 'Desconocido';
+  },
+}));
+
+// ==========================================
+// CLIENT SEGMENTS STORE
+// ==========================================
+
+interface ClientSegmentsState {
+  segments: ClientSegment[];
+  isLoading: boolean;
+  error: string | null;
+  
+  // Actions
+  fetchSegments: () => Promise<void>;
+  createSegment: (segment: {
+    name: string;
+    description?: string;
+    color?: string;
+    icon?: string;
+    segmentType?: 'manual' | 'dynamic' | 'smart';
+    conditions?: Record<string, unknown>;
+  }) => Promise<string | null>;
+  updateSegment: (id: string, updates: Partial<ClientSegment>) => Promise<void>;
+  deleteSegment: (id: string) => Promise<void>;
+  addContactToSegment: (segmentId: string, contactId: string) => Promise<void>;
+  removeContactFromSegment: (segmentId: string, contactId: string) => Promise<void>;
+  getSegmentContacts: (segmentId: string) => Promise<unknown[]>;
+  getContactSegments: (contactId: string) => Promise<unknown[]>;
+  
+  // Helpers
+  getSegmentById: (id: string) => ClientSegment | undefined;
+}
+
+export const useClientSegmentsStore = create<ClientSegmentsState>((set, get) => ({
+  segments: [],
+  isLoading: false,
+  error: null,
+  
+  fetchSegments: async () => {
+    const companyId = useCompanyStore.getState().selectedCompanyId;
+    if (!companyId) return;
+    
+    set({ isLoading: true, error: null });
+    
+    const { data, error } = await crm.segments.getAll(companyId);
+    
+    set({
+      segments: data || [],
+      isLoading: false,
+      error: error?.message || null,
+    });
+  },
+  
+  createSegment: async (segment) => {
+    const companyId = useCompanyStore.getState().selectedCompanyId;
+    if (!companyId) return null;
+    
+    const { data: segmentId, error } = await crm.segments.create({
+      myCompanyId: companyId,
+      ...segment,
+    });
+    
+    if (error) {
+      set({ error: error.message });
+      return null;
+    }
+    
+    await get().fetchSegments();
+    return segmentId;
+  },
+  
+  updateSegment: async (id, updates) => {
+    const { error } = await crm.segments.update(id, {
+      name: updates.name,
+      description: updates.description || undefined,
+      color: updates.color,
+      icon: updates.icon,
+      conditions: updates.conditions,
+      isActive: updates.isActive,
+    });
+    
+    if (!error) {
+      set(state => ({
+        segments: state.segments.map(s => 
+          s.id === id ? { ...s, ...updates } : s
+        ),
+      }));
+    }
+  },
+  
+  deleteSegment: async (id) => {
+    const { error } = await crm.segments.delete(id);
+    
+    if (!error) {
+      set(state => ({
+        segments: state.segments.filter(s => s.id !== id),
+      }));
+    }
+  },
+  
+  addContactToSegment: async (segmentId, contactId) => {
+    await crm.segments.addContact(segmentId, contactId);
+    await get().fetchSegments(); // Refresh to update counts
+  },
+  
+  removeContactFromSegment: async (segmentId, contactId) => {
+    await crm.segments.removeContact(segmentId, contactId);
+    await get().fetchSegments();
+  },
+  
+  getSegmentContacts: async (segmentId) => {
+    const { data } = await crm.segments.getContacts(segmentId);
+    return data || [];
+  },
+  
+  getContactSegments: async (contactId) => {
+    const { data } = await crm.segments.getContactSegments(contactId);
+    return data || [];
+  },
+  
+  getSegmentById: (id) => {
+    return get().segments.find(s => s.id === id);
+  },
+}));
+
+// ==========================================
+// PENDING FOLLOW-UPS STORE
+// ==========================================
+
+interface PendingFollowUpsState {
+  followUps: PendingFollowUp[];
+  isLoading: boolean;
+  error: string | null;
+  
+  // Actions
+  fetchFollowUps: () => Promise<void>;
+  markDone: (activityId: string) => Promise<void>;
+  
+  // Helpers
+  getOverdueCount: () => number;
+  getTodayCount: () => number;
+  getThisWeekCount: () => number;
+}
+
+export const usePendingFollowUpsStore = create<PendingFollowUpsState>((set, get) => ({
+  followUps: [],
+  isLoading: false,
+  error: null,
+  
+  fetchFollowUps: async () => {
+    const companyId = useCompanyStore.getState().selectedCompanyId;
+    if (!companyId) return;
+    
+    set({ isLoading: true, error: null });
+    
+    const { data, error } = await crm.activities.getPendingFollowUps(companyId);
+    
+    set({
+      followUps: data || [],
+      isLoading: false,
+      error: error?.message || null,
+    });
+  },
+  
+  markDone: async (activityId) => {
+    await crm.activities.markFollowUpDone(activityId);
+    
+    set(state => ({
+      followUps: state.followUps.filter(f => f.id !== activityId),
+    }));
+  },
+  
+  getOverdueCount: () => {
+    return get().followUps.filter(f => f.urgency === 'overdue').length;
+  },
+  
+  getTodayCount: () => {
+    return get().followUps.filter(f => f.urgency === 'today').length;
+  },
+  
+  getThisWeekCount: () => {
+    return get().followUps.filter(f => f.urgency === 'this_week').length;
+  },
+}));
+
+// ==========================================
+// CRM DASHBOARD METRICS STORE
+// ==========================================
+
+interface CRMMetricsState {
+  hotLeadsCount: number;
+  pendingFollowUpsCount: number;
+  activitiesThisWeek: number;
+  isLoading: boolean;
+  
+  // Actions
+  fetchMetrics: () => Promise<void>;
+}
+
+export const useCRMMetricsStore = create<CRMMetricsState>((set) => ({
+  hotLeadsCount: 0,
+  pendingFollowUpsCount: 0,
+  activitiesThisWeek: 0,
+  isLoading: false,
+  
+  fetchMetrics: async () => {
+    const companyId = useCompanyStore.getState().selectedCompanyId;
+    if (!companyId) return;
+    
+    set({ isLoading: true });
+    
+    const metrics = await crm.summary.getDashboardMetrics(companyId);
+    
+    set({
+      ...metrics,
+      isLoading: false,
+    });
+  },
+}));
