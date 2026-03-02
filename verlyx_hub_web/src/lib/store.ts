@@ -27,6 +27,7 @@ import {
 } from './mock-data';
 import { auth, db, supabase } from './supabase';
 import { onDealStageChanged } from './pipeline';
+import { toast } from '@/components/ui/Toast';
 
 // ==================== Auth Store ====================
 interface AuthState {
@@ -3023,6 +3024,7 @@ interface OpportunitiesState {
   updateOpportunity: (id: string, data: Partial<Opportunity>) => Promise<void>;
   deleteOpportunity: (id: string) => Promise<void>;
   changeStage: (id: string, stage: OpportunityStage, stageData: Record<string, unknown>) => Promise<boolean>;
+  executeOpportunityWon: (id: string) => Promise<{ projectId?: string; clientId?: string } | null>;
   setSelectedOpportunity: (opp: Opportunity | null) => void;
   setFilter: (filter: Partial<OpportunitiesState['filter']>) => void;
 }
@@ -3100,7 +3102,15 @@ export const useOpportunitiesStore = create<OpportunitiesState>((set, get) => ({
 
   createOpportunity: async (opp: Partial<Opportunity>) => {
     const companyId = useCompanyStore.getState().selectedCompanyId;
-    if (!companyId) return null;
+    if (!companyId) {
+      toast.error('Error', 'No hay empresa activa seleccionada. Seleccioná una empresa primero.');
+      return null;
+    }
+
+    // MVOR — Minimum Viable Opportunity Record defaults
+    const title = opp.title?.trim() || `Oportunidad ${new Date().toLocaleDateString('es')}`;
+    const nextAction = opp.nextAction?.trim() || 'Definir próximo paso';
+    const nextActionDate = opp.nextActionDate || new Date(Date.now() + 3 * 86400000).toISOString().split('T')[0];
 
     const { data, error } = await supabase
       .from('opportunities')
@@ -3109,13 +3119,13 @@ export const useOpportunitiesStore = create<OpportunitiesState>((set, get) => ({
         lead_id: opp.leadId,
         client_id: opp.clientId,
         organization_id: opp.organizationId,
-        title: opp.title,
+        title,
         description: opp.description,
         stage: opp.stage || 'qualified',
         priority: opp.priority || 'medium',
         need_detected: opp.needDetected,
-        next_action: opp.nextAction || 'Contactar',
-        next_action_date: opp.nextActionDate,
+        next_action: nextAction,
+        next_action_date: nextActionDate,
         responsible_user_id: opp.responsibleUserId,
         currency: opp.currency || 'UYU',
         owner_user_id: opp.ownerUserId || useAuthStore.getState().user?.id,
@@ -3125,7 +3135,13 @@ export const useOpportunitiesStore = create<OpportunitiesState>((set, get) => ({
       .select()
       .single();
 
-    if (!error && data) {
+    if (error) {
+      console.error('[Opportunities] Insert failed:', error);
+      toast.error('Error al crear oportunidad', error.message || 'Verificá que tu usuario tenga permisos.');
+      return null;
+    }
+
+    if (data) {
       const newOpp: Opportunity = {
         id: data.id,
         myCompanyId: data.my_company_id,
@@ -3145,6 +3161,7 @@ export const useOpportunitiesStore = create<OpportunitiesState>((set, get) => ({
         updatedAt: data.updated_at,
       };
       set(state => ({ opportunities: [newOpp, ...state.opportunities] }));
+      toast.success('Oportunidad creada', `"${newOpp.title}" agregada al pipeline`);
       return newOpp;
     }
     return null;
@@ -3154,6 +3171,7 @@ export const useOpportunitiesStore = create<OpportunitiesState>((set, get) => ({
     const dbUpdates: Record<string, unknown> = {};
     if (updates.title !== undefined) dbUpdates.title = updates.title;
     if (updates.description !== undefined) dbUpdates.description = updates.description;
+    if (updates.stage !== undefined) dbUpdates.stage = updates.stage;
     if (updates.priority !== undefined) dbUpdates.priority = updates.priority;
     if (updates.needDetected !== undefined) dbUpdates.need_detected = updates.needDetected;
     if (updates.nextAction !== undefined) dbUpdates.next_action = updates.nextAction;
@@ -3164,6 +3182,17 @@ export const useOpportunitiesStore = create<OpportunitiesState>((set, get) => ({
     if (updates.estimatedAmountMin !== undefined) dbUpdates.estimated_amount_min = updates.estimatedAmountMin;
     if (updates.estimatedAmountMax !== undefined) dbUpdates.estimated_amount_max = updates.estimatedAmountMax;
     if (updates.tentativeAmount !== undefined) dbUpdates.tentative_amount = updates.tentativeAmount;
+    if (updates.finalAmount !== undefined) dbUpdates.final_amount = updates.finalAmount;
+    if (updates.finalCurrency !== undefined) dbUpdates.final_currency = updates.finalCurrency;
+    if (updates.paymentType !== undefined) dbUpdates.payment_type = updates.paymentType;
+    if (updates.startDate !== undefined) dbUpdates.start_date = updates.startDate;
+    if (updates.wonReason !== undefined) dbUpdates.won_reason = updates.wonReason;
+    if (updates.lostReason !== undefined) dbUpdates.lost_reason = updates.lostReason;
+    if (updates.lostNote !== undefined) dbUpdates.lost_note = updates.lostNote;
+    if (updates.nextInteractionDate !== undefined) dbUpdates.next_interaction_date = updates.nextInteractionDate;
+    if (updates.clientId !== undefined) dbUpdates.client_id = updates.clientId;
+    if (updates.source !== undefined) dbUpdates.source = updates.source;
+    if (updates.isActive !== undefined) dbUpdates.is_active = updates.isActive;
     if (updates.tags !== undefined) dbUpdates.tags = updates.tags;
 
     const { error } = await supabase
@@ -3171,12 +3200,14 @@ export const useOpportunitiesStore = create<OpportunitiesState>((set, get) => ({
       .update(dbUpdates)
       .eq('id', id);
 
-    if (!error) {
-      set(state => ({
-        opportunities: state.opportunities.map(o => o.id === id ? { ...o, ...updates } : o),
-        selectedOpportunity: state.selectedOpportunity?.id === id ? { ...state.selectedOpportunity, ...updates } : state.selectedOpportunity,
-      }));
+    if (error) {
+      console.error('[Opportunities] Update failed:', error);
+      toast.error('Error al actualizar', error.message || 'No se pudo guardar los cambios.');
+      return;
     }
+
+    // Refresh from DB after update to get trigger-computed values
+    get().fetchOpportunities();
   },
 
   deleteOpportunity: async (id: string) => {
@@ -3201,12 +3232,59 @@ export const useOpportunitiesStore = create<OpportunitiesState>((set, get) => ({
       .update(dbUpdates)
       .eq('id', id);
 
-    if (!error) {
-      // Refresh after stage change (trigger updates probability, stage_changed_at, etc.)
-      get().fetchOpportunities();
-      return true;
+    if (error) {
+      console.error('[Opportunities] Stage change failed:', error);
+      // Parse DB trigger validation errors for user-friendly messages
+      const msg = error.message || '';
+      if (msg.includes('proposed_service')) {
+        toast.error('Faltan datos', 'La etapa Propuesta requiere un servicio propuesto.');
+      } else if (msg.includes('next_interaction_date')) {
+        toast.error('Faltan datos', 'La etapa Negociación requiere fecha de próximo contacto.');
+      } else if (msg.includes('final_amount')) {
+        toast.error('Faltan datos', 'La etapa Ganada requiere monto final > 0.');
+      } else if (msg.includes('final_currency')) {
+        toast.error('Faltan datos', 'La etapa Ganada requiere moneda final.');
+      } else if (msg.includes('payment_type')) {
+        toast.error('Faltan datos', 'La etapa Ganada requiere tipo de pago.');
+      } else if (msg.includes('start_date')) {
+        toast.error('Faltan datos', 'La etapa Ganada requiere fecha de inicio.');
+      } else if (msg.includes('lost_reason')) {
+        toast.error('Faltan datos', 'La etapa Perdida requiere motivo de pérdida.');
+      } else {
+        toast.error('Error al cambiar etapa', msg);
+      }
+      return false;
     }
-    return false;
+
+    // Refresh after stage change (trigger updates probability, stage_changed_at, etc.)
+    await get().fetchOpportunities();
+    return true;
+  },
+
+  executeOpportunityWon: async (id: string) => {
+    const userId = useAuthStore.getState().user?.id;
+    if (!userId) {
+      toast.error('Error', 'No hay sesión activa.');
+      return null;
+    }
+
+    const { data, error } = await supabase.rpc('execute_opportunity_won', {
+      p_opportunity_id: id,
+      p_user_id: userId,
+    });
+
+    if (error) {
+      console.error('[Opportunities] Won execution failed:', error);
+      // Non-blocking: the stage change already succeeded, this is the lifecycle automation
+      toast.warning('Oportunidad ganada', 'Se marcó como ganada pero la automatización de cliente/proyecto falló. Creálo manualmente.');
+      return null;
+    }
+
+    if (data) {
+      toast.success('Oportunidad ganada', 'Cliente actualizado, proyecto y tarea de onboarding creados automáticamente.');
+      return { projectId: data.project_id, clientId: data.client_id };
+    }
+    return null;
   },
 
   setSelectedOpportunity: (opp: Opportunity | null) => set({ selectedOpportunity: opp }),

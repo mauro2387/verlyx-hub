@@ -4,7 +4,7 @@
  * Provides live subscriptions to key tables so the UI updates
  * in real-time when data changes (from other tabs, team members, or pipeline automations).
  * 
- * Tables subscribed: deals, tasks, projects, incomes, notifications
+ * Tables subscribed: opportunities, leads, tasks, projects
  */
 
 import { supabase } from './supabase';
@@ -15,14 +15,13 @@ import type { RealtimeChannel, RealtimePostgresChangesPayload } from '@supabase/
 // TYPES
 // ==========================================
 
-type TableName = 'deals' | 'tasks' | 'projects' | 'incomes' | 'notifications';
+type TableName = 'opportunities' | 'leads' | 'tasks' | 'projects';
 
 interface RealtimeCallbacks {
-  onDealChange?: (payload: RealtimePostgresChangesPayload<Record<string, any>>) => void;
+  onOpportunityChange?: (payload: RealtimePostgresChangesPayload<Record<string, any>>) => void;
+  onLeadChange?: (payload: RealtimePostgresChangesPayload<Record<string, any>>) => void;
   onTaskChange?: (payload: RealtimePostgresChangesPayload<Record<string, any>>) => void;
   onProjectChange?: (payload: RealtimePostgresChangesPayload<Record<string, any>>) => void;
-  onIncomeChange?: (payload: RealtimePostgresChangesPayload<Record<string, any>>) => void;
-  onNotificationChange?: (payload: RealtimePostgresChangesPayload<Record<string, any>>) => void;
 }
 
 // ==========================================
@@ -49,10 +48,18 @@ export function subscribeToRealtime(callbacks: RealtimeCallbacks): () => void {
     .channel('verlyx-hub-realtime')
     .on(
       'postgres_changes',
-      { event: '*', schema: 'public', table: 'deals' },
+      { event: '*', schema: 'public', table: 'opportunities' },
       (payload) => {
-        currentCallbacks.onDealChange?.(payload);
-        showRealtimeToast('deals', payload);
+        currentCallbacks.onOpportunityChange?.(payload);
+        showRealtimeToast('opportunities', payload);
+      }
+    )
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'leads' },
+      (payload) => {
+        currentCallbacks.onLeadChange?.(payload);
+        showRealtimeToast('leads', payload);
       }
     )
     .on(
@@ -70,31 +77,11 @@ export function subscribeToRealtime(callbacks: RealtimeCallbacks): () => void {
         currentCallbacks.onProjectChange?.(payload);
       }
     )
-    .on(
-      'postgres_changes',
-      { event: '*', schema: 'public', table: 'incomes' },
-      (payload) => {
-        currentCallbacks.onIncomeChange?.(payload);
-        showRealtimeToast('incomes', payload);
-      }
-    )
-    .on(
-      'postgres_changes',
-      { event: 'INSERT', schema: 'public', table: 'notifications' },
-      (payload) => {
-        currentCallbacks.onNotificationChange?.(payload);
-        // Show notification toast for new notifications
-        const record = payload.new as any;
-        if (record?.title) {
-          toast.info(record.title, record.message?.slice(0, 100));
-        }
-      }
-    )
     .subscribe((status) => {
       if (status === 'SUBSCRIBED') {
         console.log('[Realtime] Connected to verlyx-hub-realtime channel');
       } else if (status === 'CHANNEL_ERROR') {
-        console.error('[Realtime] Channel error — will retry');
+        console.warn('[Realtime] Channel error — ensure Realtime replication is enabled for subscribed tables in Supabase Dashboard');
       }
     });
 
@@ -136,22 +123,19 @@ function showRealtimeToast(
   const record = payload.new as any;
 
   switch (table) {
-    case 'deals':
-      if (record?.name) {
-        toast.info('Nuevo deal', `"${record.name}" agregado al pipeline`);
+    case 'opportunities':
+      if (record?.title) {
+        toast.info('Nueva oportunidad', `"${record.title}" agregada al pipeline`);
+      }
+      break;
+    case 'leads':
+      if (record?.company_name) {
+        toast.info('Nuevo lead', `"${record.company_name}" agregado`);
       }
       break;
     case 'tasks':
       if (record?.title) {
         toast.info('Nueva tarea', `"${record.title}" creada`);
-      }
-      break;
-    case 'incomes':
-      if (record?.description) {
-        toast.info(
-          'Nuevo ingreso',
-          `"${record.description}" por $${(record.amount || 0).toLocaleString()}`
-        );
       }
       break;
   }
@@ -168,10 +152,10 @@ function showRealtimeToast(
  * Example:
  * ```
  * useRealtimeSync({
- *   onDealChange: () => fetchDeals(),
+ *   onOpportunityChange: () => fetchOpportunities(),
+ *   onLeadChange: () => fetchLeads(),
  *   onTaskChange: () => fetchTasks(),
  *   onProjectChange: () => fetchProjects(),
- *   onIncomeChange: () => fetchIncomes(),
  * });
  * ```
  */

@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react';
 import { ToastContainer } from '@/components/ui/Toast';
-import { useAuthStore, useDealsStore, useProjectsStore, useTasksStore } from '@/lib/store';
+import { useAuthStore, useOpportunitiesStore, useLeadsStore, useProjectsStore, useTasksStore } from '@/lib/store';
 import { subscribeToRealtime, unsubscribeFromRealtime } from '@/lib/realtime';
 
 export function ClientProviders({ children }: { children: React.ReactNode }) {
@@ -16,8 +16,11 @@ export function ClientProviders({ children }: { children: React.ReactNode }) {
 
     // Connect realtime when authenticated — refetch stores on changes
     const cleanup = subscribeToRealtime({
-      onDealChange: () => {
-        useDealsStore.getState().fetchDeals();
+      onOpportunityChange: () => {
+        useOpportunitiesStore.getState().fetchOpportunities();
+      },
+      onLeadChange: () => {
+        useLeadsStore.getState().fetchLeads();
       },
       onTaskChange: () => {
         useTasksStore.getState().fetchTasks();

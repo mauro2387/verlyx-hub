@@ -94,6 +94,13 @@ export default function DealsPage() {
   const [filterStage, setFilterStage] = useState<string>('');
   const [filterPriority, setFilterPriority] = useState<string>('');
 
+  // Stage transition dialogs
+  const [wonDialogOpen, setWonDialogOpen] = useState(false);
+  const [lostDialogOpen, setLostDialogOpen] = useState(false);
+  const [stageTransitionOpp, setStageTransitionOpp] = useState<Opportunity | null>(null);
+  const [wonFormData, setWonFormData] = useState({ finalAmount: '', finalCurrency: 'UYU', paymentType: '', startDate: '', wonReason: '' });
+  const [lostFormData, setLostFormData] = useState({ lostReason: '', lostNote: '' });
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [formData, setFormData] = useState<OppFormData>(EMPTY_FORM);
 
   useEffect(() => {
@@ -190,6 +197,7 @@ export default function DealsPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.title.trim()) return;
+    setIsSubmitting(true);
 
     const oppData: Partial<Opportunity> = {
       title: formData.title,
@@ -199,14 +207,15 @@ export default function DealsPage() {
       clientId: formData.clientId || null,
       currency: formData.currency,
       needDetected: formData.needDetected || null,
-      nextAction: formData.nextAction || 'Contactar',
-      nextActionDate: formData.nextActionDate || new Date().toISOString().split('T')[0],
+      nextAction: formData.nextAction || 'Definir próximo paso',
+      nextActionDate: formData.nextActionDate || new Date(Date.now() + 3 * 86400000).toISOString().split('T')[0],
       proposedService: formData.proposedService || null,
       proposalSent: formData.proposalSent,
       proposalDate: formData.proposalDate || null,
       estimatedAmountMin: formData.estimatedAmountMin ? parseFloat(formData.estimatedAmountMin) : null,
       estimatedAmountMax: formData.estimatedAmountMax ? parseFloat(formData.estimatedAmountMax) : null,
       tentativeAmount: formData.tentativeAmount ? parseFloat(formData.tentativeAmount) : null,
+      nextInteractionDate: formData.nextInteractionDate || null,
       finalAmount: formData.finalAmount ? parseFloat(formData.finalAmount) : null,
       finalCurrency: formData.finalCurrency || null,
       paymentType: (formData.paymentType || null) as Opportunity['paymentType'],
@@ -223,6 +232,7 @@ export default function DealsPage() {
     } else {
       await createOpportunity(oppData);
     }
+    setIsSubmitting(false);
     setIsModalOpen(false);
   };
 
@@ -246,9 +256,89 @@ export default function DealsPage() {
   const handleDrop = async (e: React.DragEvent, newStage: OpportunityStage) => {
     e.preventDefault();
     const oppId = e.dataTransfer.getData('oppId');
-    if (oppId) {
-      await changeStage(oppId, newStage, {});
+    if (!oppId) return;
+
+    const opp = opportunities.find(o => o.id === oppId);
+    if (!opp || opp.stage === newStage) return;
+
+    // WON requires mandatory fields — show dialog
+    if (newStage === 'won') {
+      setStageTransitionOpp(opp);
+      setWonFormData({
+        finalAmount: opp.tentativeAmount?.toString() || opp.estimatedAmountMax?.toString() || '',
+        finalCurrency: opp.currency || 'UYU',
+        paymentType: '',
+        startDate: new Date().toISOString().split('T')[0],
+        wonReason: '',
+      });
+      setWonDialogOpen(true);
+      return;
     }
+
+    // LOST requires reason — show dialog
+    if (newStage === 'lost') {
+      setStageTransitionOpp(opp);
+      setLostFormData({ lostReason: '', lostNote: '' });
+      setLostDialogOpen(true);
+      return;
+    }
+
+    // PROPOSAL requires proposed_service
+    if (newStage === 'proposal' && !opp.proposedService) {
+      await changeStage(oppId, newStage, {
+        proposed_service: opp.title,
+      });
+      return;
+    }
+
+    // NEGOTIATION requires next_interaction_date
+    if (newStage === 'negotiation' && !opp.nextInteractionDate) {
+      await changeStage(oppId, newStage, {
+        next_interaction_date: new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0],
+      });
+      return;
+    }
+
+    await changeStage(oppId, newStage, {});
+  };
+
+  const handleWonConfirm = async () => {
+    if (!stageTransitionOpp) return;
+    if (!wonFormData.finalAmount || parseFloat(wonFormData.finalAmount) <= 0) return;
+    if (!wonFormData.paymentType) return;
+
+    setIsSubmitting(true);
+    const success = await changeStage(stageTransitionOpp.id, 'won', {
+      final_amount: parseFloat(wonFormData.finalAmount),
+      final_currency: wonFormData.finalCurrency || 'UYU',
+      payment_type: wonFormData.paymentType,
+      start_date: wonFormData.startDate || new Date().toISOString().split('T')[0],
+      won_reason: wonFormData.wonReason || null,
+    });
+
+    if (success) {
+      // Execute lifecycle automation: create client, project, onboarding task
+      await useOpportunitiesStore.getState().executeOpportunityWon(stageTransitionOpp.id);
+    }
+
+    setIsSubmitting(false);
+    setWonDialogOpen(false);
+    setStageTransitionOpp(null);
+  };
+
+  const handleLostConfirm = async () => {
+    if (!stageTransitionOpp) return;
+    if (!lostFormData.lostReason) return;
+
+    setIsSubmitting(true);
+    await changeStage(stageTransitionOpp.id, 'lost', {
+      lost_reason: lostFormData.lostReason,
+      lost_note: lostFormData.lostNote || null,
+    });
+
+    setIsSubmitting(false);
+    setLostDialogOpen(false);
+    setStageTransitionOpp(null);
   };
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -1084,8 +1174,8 @@ export default function DealsPage() {
             <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)}>
               Cancelar
             </Button>
-            <Button type="submit">
-              {editingOpp ? 'Guardar Cambios' : 'Crear Oportunidad'}
+            <Button type="submit" disabled={isSubmitting || !formData.title.trim()}>
+              {isSubmitting ? 'Guardando...' : editingOpp ? 'Guardar Cambios' : 'Crear Oportunidad'}
             </Button>
           </div>
         </form>
@@ -1100,6 +1190,155 @@ export default function DealsPage() {
         confirmText="Eliminar"
         variant="danger"
       />
+
+      {/* WON Stage Transition Dialog */}
+      <Modal
+        isOpen={wonDialogOpen}
+        onClose={() => { setWonDialogOpen(false); setStageTransitionOpp(null); }}
+        title="Marcar como Ganada"
+        size="md"
+      >
+        <div className="space-y-4">
+          <div className="p-4 bg-green-50 rounded-lg border border-green-200">
+            <p className="text-sm text-green-800 font-medium">
+              Al marcar como ganada se ejecutará automáticamente:
+            </p>
+            <ul className="mt-2 text-sm text-green-700 space-y-1">
+              <li className="flex items-center gap-2">
+                <svg className="w-4 h-4 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                Actualizar contacto como cliente
+              </li>
+              <li className="flex items-center gap-2">
+                <svg className="w-4 h-4 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                Crear proyecto automáticamente
+              </li>
+              <li className="flex items-center gap-2">
+                <svg className="w-4 h-4 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                Crear tarea de onboarding
+              </li>
+              <li className="flex items-center gap-2">
+                <svg className="w-4 h-4 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                Registrar ingreso pendiente
+              </li>
+            </ul>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <Input
+              label="Monto Final *"
+              type="number"
+              placeholder="0"
+              value={wonFormData.finalAmount}
+              onChange={(e) => setWonFormData({ ...wonFormData, finalAmount: e.target.value })}
+            />
+            <Select
+              label="Moneda *"
+              value={wonFormData.finalCurrency}
+              onChange={(e) => setWonFormData({ ...wonFormData, finalCurrency: e.target.value })}
+              options={[
+                { value: 'UYU', label: 'UYU ($)' },
+                { value: 'USD', label: 'USD ($)' },
+                { value: 'EUR', label: 'EUR (€)' },
+              ]}
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <Select
+              label="Tipo de Pago *"
+              value={wonFormData.paymentType}
+              onChange={(e) => setWonFormData({ ...wonFormData, paymentType: e.target.value })}
+              options={[
+                { value: '', label: 'Seleccionar...' },
+                { value: 'one_time', label: 'Pago Único' },
+                { value: 'monthly', label: 'Mensual' },
+                { value: 'quarterly', label: 'Trimestral' },
+                { value: 'annual', label: 'Anual' },
+                { value: 'milestone', label: 'Por Hito' },
+                { value: 'custom', label: 'Personalizado' },
+              ]}
+            />
+            <Input
+              label="Fecha de Inicio *"
+              type="date"
+              value={wonFormData.startDate}
+              onChange={(e) => setWonFormData({ ...wonFormData, startDate: e.target.value })}
+            />
+          </div>
+          <Input
+            label="Razón de Éxito"
+            placeholder="¿Por qué se ganó?"
+            value={wonFormData.wonReason}
+            onChange={(e) => setWonFormData({ ...wonFormData, wonReason: e.target.value })}
+          />
+
+          <div className="flex justify-end gap-3 pt-4 border-t">
+            <Button variant="outline" onClick={() => { setWonDialogOpen(false); setStageTransitionOpp(null); }}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleWonConfirm}
+              disabled={isSubmitting || !wonFormData.finalAmount || !wonFormData.paymentType}
+              className="bg-green-600 hover:bg-green-700 text-white"
+            >
+              {isSubmitting ? 'Procesando...' : 'Confirmar Ganada'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* LOST Stage Transition Dialog */}
+      <Modal
+        isOpen={lostDialogOpen}
+        onClose={() => { setLostDialogOpen(false); setStageTransitionOpp(null); }}
+        title="Marcar como Perdida"
+        size="md"
+      >
+        <div className="space-y-4">
+          <div className="p-4 bg-red-50 rounded-lg border border-red-200">
+            <p className="text-sm text-red-800">
+              Indicá el motivo de pérdida para mejorar el análisis del pipeline.
+            </p>
+          </div>
+
+          <Select
+            label="Razón de Pérdida *"
+            value={lostFormData.lostReason}
+            onChange={(e) => setLostFormData({ ...lostFormData, lostReason: e.target.value })}
+            options={[
+              { value: '', label: 'Seleccionar motivo...' },
+              { value: 'Precio muy alto', label: 'Precio muy alto' },
+              { value: 'Presupuesto no aprobado', label: 'Presupuesto no aprobado' },
+              { value: 'Timing inadecuado', label: 'Timing inadecuado' },
+              { value: 'Prefirió competidor', label: 'Prefirió competidor' },
+              { value: 'Falta funcionalidad', label: 'Falta funcionalidad' },
+              { value: 'Decisor no disponible', label: 'Decisor no disponible' },
+              { value: 'Cambio de prioridad interna', label: 'Cambio de prioridad interna' },
+              { value: 'Términos contractuales', label: 'Términos contractuales' },
+              { value: 'Otro', label: 'Otro' },
+            ]}
+          />
+          <Textarea
+            label="Notas adicionales"
+            placeholder="Detalle que pueda servir para futuras oportunidades..."
+            rows={3}
+            value={lostFormData.lostNote}
+            onChange={(e) => setLostFormData({ ...lostFormData, lostNote: e.target.value })}
+          />
+
+          <div className="flex justify-end gap-3 pt-4 border-t">
+            <Button variant="outline" onClick={() => { setLostDialogOpen(false); setStageTransitionOpp(null); }}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleLostConfirm}
+              disabled={isSubmitting || !lostFormData.lostReason}
+              variant="danger"
+            >
+              {isSubmitting ? 'Procesando...' : 'Confirmar Perdida'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </MainLayout>
   );
 }
