@@ -177,8 +177,8 @@ export default function AIAssistantPage() {
               {hasError && (
                 <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
                   <p className="font-semibold mb-1">⚠️ Error al comunicarse con el asistente</p>
-                  <p>Verifica que ANTHROPIC_API_KEY esté configurada en <code className="bg-amber-100 px-1 rounded">.env.local</code></p>
-                  <p className="mt-1 text-xs text-amber-600">Obtén tu API key en: console.anthropic.com</p>
+                  <p>Verifica que OPENAI_API_KEY esté configurada en <code className="bg-amber-100 px-1 rounded">.env.local</code></p>
+                  <p className="mt-1 text-xs text-amber-600">Obtén tu API key en: platform.openai.com</p>
                   <button onClick={() => clearError()} className="mt-2 text-xs text-indigo-600 hover:underline">Reintentar</button>
                 </div>
               )}
@@ -242,7 +242,7 @@ export default function AIAssistantPage() {
               </div>
               <div>
                 <h3 className="font-semibold text-gray-900">Asistente Verlyx</h3>
-                <p className="text-sm text-gray-500">Claude AI · Datos en vivo</p>
+                <p className="text-sm text-gray-500">OpenAI GPT-4.1 · Datos en vivo</p>
               </div>
             </div>
             <p className="text-sm text-gray-600">
@@ -277,11 +277,11 @@ export default function AIAssistantPage() {
             <div className="space-y-2 text-sm text-gray-600">
               <div className="flex justify-between">
                 <span>Proveedor</span>
-                <span className="font-medium text-gray-900">Anthropic</span>
+                <span className="font-medium text-gray-900">OpenAI</span>
               </div>
               <div className="flex justify-between">
                 <span>Modelo</span>
-                <span className="font-medium text-gray-900">Claude Sonnet</span>
+                <span className="font-medium text-gray-900">GPT-4.1</span>
               </div>
               <div className="flex justify-between">
                 <span>Tool Use</span>
@@ -353,6 +353,8 @@ function formatToolName(name: string): string {
     mark_income_received: 'Marcar ingreso cobrado',
     create_calendar_event: 'Crear evento',
     get_project_status: 'Estado del proyecto',
+    get_leads_summary: 'Resumen de leads',
+    get_opportunities_pipeline: 'Pipeline oportunidades',
   };
   return names[name] || name;
 }

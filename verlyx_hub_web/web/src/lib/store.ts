@@ -1,4 +1,4 @@
-﻿import { create } from 'zustand';
+import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import {
   Client,
@@ -11,22 +11,11 @@ import {
   DashboardStats,
   TaskStatus,
   DealStage,
-  ContactType,
-  ProjectStatus,
-  Priority,
-  Lead,
-  LeadStatus,
-  LeadSource,
-  LeadActivity,
-  ProspectingCampaign,
-  Opportunity,
-  OpportunityStage,
 } from './types';
 import {
   mockDocuments,
 } from './mock-data';
-import { auth, db, supabase } from './supabase';
-import { onDealStageChanged } from './pipeline';
+import { auth, db } from './supabase';
 
 // ==================== Auth Store ====================
 interface AuthState {
@@ -251,7 +240,7 @@ export const useClientsStore = create<ClientsState>((set, get) => ({
         phone: c.phone || '',
         company: c.company || '',
         companyName: c.company || '',
-        type: (c.type as ContactType) || null,
+        type: c.type as 'individual' | 'company',
         position: c.position || '',
         status: c.status,
         notes: c.notes || '',
@@ -369,8 +358,8 @@ export const useProjectsStore = create<ProjectsState>((set, get) => ({
         id: p.id,
         name: p.name,
         description: p.description || '',
-        status: p.status as ProjectStatus,
-        priority: p.priority as Priority,
+        status: p.status as 'planning' | 'active' | 'on_hold' | 'completed' | 'cancelled',
+        priority: p.priority as 'low' | 'medium' | 'high' | 'critical',
         clientId: p.contact_id || undefined,
         startDate: p.start_date || undefined,
         endDate: p.end_date || undefined,
@@ -513,7 +502,7 @@ export const useTasksStore = create<TasksState>((set, get) => ({
         title: t.title,
         description: t.description || '',
         status: t.status as TaskStatus,
-        priority: t.priority as Priority,
+        priority: t.priority as 'low' | 'medium' | 'high' | 'critical',
         projectId: t.project_id,
         assignedTo: t.assigned_to || undefined,
         assigneeName: undefined,
@@ -558,7 +547,7 @@ export const useTasksStore = create<TasksState>((set, get) => ({
       due_date: data.dueDate,
       estimated_hours: data.estimatedHours,
       actual_hours: data.actualHours,
-      completed_at: data.status === 'done' ? new Date().toISOString() : null,
+      completed_at: data.status === 'DONE' ? new Date().toISOString() : null,
       tags: data.tags,
     });
     get().fetchTasks();
@@ -710,9 +699,6 @@ export const useDealsStore = create<DealsState>((set, get) => ({
     set((state) => ({ deals: state.deals.filter((d) => d.id !== id) }));
   },
   moveDeal: async (dealId, newStage) => {
-    const deal = get().deals.find(d => d.id === dealId);
-    const oldStage = deal?.stage;
-
     await db.deals.update(dealId, { stage: newStage });
     set((state) => ({
       deals: state.deals.map((d) =>
@@ -721,13 +707,6 @@ export const useDealsStore = create<DealsState>((set, get) => ({
           : d
       ),
     }));
-
-    // Trigger pipeline automation for terminal stages
-    if (deal && oldStage && oldStage !== newStage) {
-      const updatedDeal = { ...deal, stage: newStage };
-      // Run pipeline async â€” don't block the UI
-      onDealStageChanged(updatedDeal, oldStage, newStage).catch(console.error);
-    }
   },
   setFilter: (filter) => {
     set((state) => ({ filter: { ...state.filter, ...filter } }));
@@ -755,7 +734,7 @@ export const useDealsStore = create<DealsState>((set, get) => ({
   },
   getStageStats: () => {
     const deals = get().deals;
-    const stages: DealStage[] = ['lead', 'qualified', 'proposal', 'negotiation', 'won', 'lost'];
+    const stages: DealStage[] = ['LEAD', 'QUALIFIED', 'PROPOSAL', 'NEGOTIATION', 'CLOSED_WON', 'CLOSED_LOST'];
     return stages.map((stage) => {
       const stageDeals = deals.filter((d) => d.stage === stage);
       return {
@@ -1193,12 +1172,12 @@ interface PdfGeneratorState {
 const defaultTemplates: Omit<PdfTemplate, 'id' | 'createdAt' | 'updatedAt'>[] = [
   {
     name: 'Contrato de Servicios',
-    description: 'Contrato estÃ¡ndar para prestaciÃ³n de servicios profesionales',
+    description: 'Contrato estándar para prestación de servicios profesionales',
     templateType: 'contract',
     fields: [
       { name: 'clientName', label: 'Nombre del Cliente', type: 'text', required: true },
-      { name: 'clientAddress', label: 'DirecciÃ³n del Cliente', type: 'text', required: true },
-      { name: 'serviceDescription', label: 'DescripciÃ³n del Servicio', type: 'textarea', required: true },
+      { name: 'clientAddress', label: 'Dirección del Cliente', type: 'text', required: true },
+      { name: 'serviceDescription', label: 'Descripción del Servicio', type: 'textarea', required: true },
       { name: 'amount', label: 'Monto Total', type: 'number', required: true },
       { name: 'startDate', label: 'Fecha de Inicio', type: 'date', required: true },
       { name: 'endDate', label: 'Fecha de Fin', type: 'date', required: false },
@@ -1211,7 +1190,7 @@ const defaultTemplates: Omit<PdfTemplate, 'id' | 'createdAt' | 'updatedAt'>[] = 
     description: 'Factura para productos y servicios',
     templateType: 'invoice',
     fields: [
-      { name: 'invoiceNumber', label: 'NÃºmero de Factura', type: 'text', required: true },
+      { name: 'invoiceNumber', label: 'Número de Factura', type: 'text', required: true },
       { name: 'clientName', label: 'Cliente', type: 'text', required: true },
       { name: 'items', label: 'Conceptos', type: 'textarea', required: true },
       { name: 'subtotal', label: 'Subtotal', type: 'number', required: true },
@@ -1223,17 +1202,17 @@ const defaultTemplates: Omit<PdfTemplate, 'id' | 'createdAt' | 'updatedAt'>[] = 
     isActive: true,
   },
   {
-    name: 'CotizaciÃ³n de Proyecto',
-    description: 'Propuesta comercial y cotizaciÃ³n de proyectos',
+    name: 'Cotización de Proyecto',
+    description: 'Propuesta comercial y cotización de proyectos',
     templateType: 'quote',
     fields: [
-      { name: 'quoteNumber', label: 'NÃºmero de CotizaciÃ³n', type: 'text', required: true },
+      { name: 'quoteNumber', label: 'Número de Cotización', type: 'text', required: true },
       { name: 'clientName', label: 'Cliente', type: 'text', required: true },
-      { name: 'projectDescription', label: 'DescripciÃ³n del Proyecto', type: 'textarea', required: true },
+      { name: 'projectDescription', label: 'Descripción del Proyecto', type: 'textarea', required: true },
       { name: 'deliverables', label: 'Entregables', type: 'textarea', required: true },
       { name: 'timeline', label: 'Tiempo de Entrega', type: 'text', required: true },
       { name: 'price', label: 'Precio', type: 'number', required: true },
-      { name: 'validUntil', label: 'VÃ¡lido Hasta', type: 'date', required: true },
+      { name: 'validUntil', label: 'Válido Hasta', type: 'date', required: true },
     ],
     htmlContent: null,
     isActive: true,
@@ -1243,11 +1222,11 @@ const defaultTemplates: Omit<PdfTemplate, 'id' | 'createdAt' | 'updatedAt'>[] = 
     description: 'Comprobante de pago recibido',
     templateType: 'receipt',
     fields: [
-      { name: 'receiptNumber', label: 'NÃºmero de Recibo', type: 'text', required: true },
+      { name: 'receiptNumber', label: 'Número de Recibo', type: 'text', required: true },
       { name: 'clientName', label: 'Recibido de', type: 'text', required: true },
       { name: 'concept', label: 'Concepto', type: 'text', required: true },
       { name: 'amount', label: 'Monto', type: 'number', required: true },
-      { name: 'paymentMethod', label: 'MÃ©todo de Pago', type: 'select', required: true, options: ['Efectivo', 'Transferencia', 'Tarjeta', 'Cheque'] },
+      { name: 'paymentMethod', label: 'Método de Pago', type: 'select', required: true, options: ['Efectivo', 'Transferencia', 'Tarjeta', 'Cheque'] },
       { name: 'paymentDate', label: 'Fecha de Pago', type: 'date', required: true },
     ],
     htmlContent: null,
@@ -1258,12 +1237,12 @@ const defaultTemplates: Omit<PdfTemplate, 'id' | 'createdAt' | 'updatedAt'>[] = 
     description: 'Reporte de actividades y resultados mensuales',
     templateType: 'report',
     fields: [
-      { name: 'reportTitle', label: 'TÃ­tulo del Reporte', type: 'text', required: true },
-      { name: 'period', label: 'PerÃ­odo', type: 'text', required: true },
+      { name: 'reportTitle', label: 'Título del Reporte', type: 'text', required: true },
+      { name: 'period', label: 'Período', type: 'text', required: true },
       { name: 'summary', label: 'Resumen Ejecutivo', type: 'textarea', required: true },
       { name: 'achievements', label: 'Logros', type: 'textarea', required: true },
-      { name: 'challenges', label: 'DesafÃ­os', type: 'textarea', required: false },
-      { name: 'nextSteps', label: 'PrÃ³ximos Pasos', type: 'textarea', required: false },
+      { name: 'challenges', label: 'Desafíos', type: 'textarea', required: false },
+      { name: 'nextSteps', label: 'Próximos Pasos', type: 'textarea', required: false },
     ],
     htmlContent: null,
     isActive: true,
@@ -2287,7 +2266,7 @@ export const useContactActivitiesStore = create<ContactActivitiesState>((set, ge
     const { error } = await crm.activities.update(id, {
       activityType: updates.activityType,
       direction: updates.direction,
-      sentiment: updates.sentiment || undefined,
+      sentiment: updates.sentiment,
       subject: updates.subject || undefined,
       description: updates.description || undefined,
       outcome: updates.outcome || undefined,
@@ -2463,7 +2442,7 @@ export const useLeadScoresStore = create<LeadScoresState>((set, get) => ({
   
   getTemperatureLabel: (temperature) => {
     const labels: Record<string, string> = {
-      cold: 'FrÃ­o',
+      cold: 'Frío',
       warm: 'Tibio',
       hot: 'Caliente',
       very_hot: 'Muy Caliente',
@@ -2687,514 +2666,4 @@ export const useCRMMetricsStore = create<CRMMetricsState>((set) => ({
       isLoading: false,
     });
   },
-}));
-
-// ==========================================
-// LEADS STORE (Prospecting)
-// ==========================================
-
-interface LeadsState {
-  leads: Lead[];
-  selectedLead: Lead | null;
-  activities: LeadActivity[];
-  campaigns: ProspectingCampaign[];
-  isLoading: boolean;
-  filter: {
-    status?: LeadStatus;
-    source?: LeadSource;
-    search?: string;
-  };
-
-  // Actions
-  fetchLeads: () => Promise<void>;
-  fetchLeadActivities: (leadId: string) => Promise<void>;
-  fetchCampaigns: () => Promise<void>;
-  createLead: (lead: Partial<Lead>) => Promise<Lead | null>;
-  updateLead: (id: string, data: Partial<Lead>) => Promise<void>;
-  deleteLead: (id: string) => Promise<void>;
-  setSelectedLead: (lead: Lead | null) => void;
-  setFilter: (filter: Partial<LeadsState['filter']>) => void;
-  addActivity: (activity: Partial<LeadActivity>) => Promise<void>;
-  convertToOpportunity: (leadId: string) => Promise<string | null>;
-}
-
-export const useLeadsStore = create<LeadsState>((set, get) => ({
-  leads: [],
-  selectedLead: null,
-  activities: [],
-  campaigns: [],
-  isLoading: false,
-  filter: {},
-
-  fetchLeads: async () => {
-    const companyId = useCompanyStore.getState().selectedCompanyId;
-    if (!companyId) return;
-
-    set({ isLoading: true });
-    const { data, error } = await supabase
-      .from('leads')
-      .select('*')
-      .eq('my_company_id', companyId)
-      .order('created_at', { ascending: false });
-
-    if (!error && data) {
-      const leads: Lead[] = data.map((d: any) => ({
-        id: d.id,
-        myCompanyId: d.my_company_id,
-        companyName: d.company_name,
-        businessType: d.business_type,
-        address: d.address,
-        lat: d.lat,
-        lng: d.lng,
-        contactName: d.contact_name,
-        contactEmail: d.contact_email,
-        contactPhone: d.contact_phone,
-        website: d.website,
-        source: d.source,
-        channel: d.channel,
-        status: d.status,
-        prospectScore: d.prospect_score || 0,
-        contactAttempts: d.contact_attempts || 0,
-        lastContactedAt: d.last_contacted_at,
-        notes: d.notes,
-        osmId: d.osm_id,
-        osmTags: d.osm_tags,
-        campaignId: d.campaign_id,
-        convertedToOpportunityId: d.converted_to_opportunity_id,
-        convertedAt: d.converted_at,
-        convertedBy: d.converted_by,
-        ownerUserId: d.owner_user_id,
-        tags: d.tags || [],
-        customFields: d.custom_fields || {},
-        createdAt: d.created_at,
-        updatedAt: d.updated_at,
-      }));
-      set({ leads, isLoading: false });
-    } else {
-      set({ isLoading: false });
-    }
-  },
-
-  fetchLeadActivities: async (leadId: string) => {
-    const { data } = await supabase
-      .from('lead_activities')
-      .select('*')
-      .eq('lead_id', leadId)
-      .order('created_at', { ascending: false });
-
-    if (data) {
-      const activities: LeadActivity[] = data.map((d: any) => ({
-        id: d.id,
-        leadId: d.lead_id,
-        activityType: d.activity_type,
-        channel: d.channel,
-        subject: d.subject,
-        body: d.body,
-        outcome: d.outcome,
-        oldStatus: d.old_status,
-        newStatus: d.new_status,
-        performedBy: d.performed_by,
-        metadata: d.metadata,
-        createdAt: d.created_at,
-      }));
-      set({ activities });
-    }
-  },
-
-  fetchCampaigns: async () => {
-    const companyId = useCompanyStore.getState().selectedCompanyId;
-    if (!companyId) return;
-
-    const { data } = await supabase
-      .from('prospecting_campaigns')
-      .select('*')
-      .eq('my_company_id', companyId)
-      .order('created_at', { ascending: false });
-
-    if (data) {
-      const campaigns: ProspectingCampaign[] = data.map((d: any) => ({
-        id: d.id,
-        myCompanyId: d.my_company_id,
-        name: d.name,
-        description: d.description,
-        status: d.status,
-        searchCriteria: d.search_criteria,
-        targetArea: d.target_area,
-        targetBusinessTypes: d.target_business_types || [],
-        emailTemplate: d.email_template,
-        whatsappTemplate: d.whatsapp_template,
-        totalLeads: d.total_leads || 0,
-        contactedLeads: d.contacted_leads || 0,
-        respondedLeads: d.responded_leads || 0,
-        convertedLeads: d.converted_leads || 0,
-        startDate: d.start_date,
-        endDate: d.end_date,
-        createdBy: d.created_by,
-        createdAt: d.created_at,
-        updatedAt: d.updated_at,
-      }));
-      set({ campaigns });
-    }
-  },
-
-  createLead: async (lead: Partial<Lead>) => {
-    const companyId = useCompanyStore.getState().selectedCompanyId;
-    if (!companyId) return null;
-
-    const { data, error } = await supabase
-      .from('leads')
-      .insert({
-        my_company_id: companyId,
-        company_name: lead.companyName,
-        business_type: lead.businessType,
-        address: lead.address,
-        lat: lead.lat,
-        lng: lead.lng,
-        contact_name: lead.contactName,
-        contact_email: lead.contactEmail,
-        contact_phone: lead.contactPhone,
-        website: lead.website,
-        source: lead.source || 'manual',
-        channel: lead.channel,
-        status: lead.status || 'not_contacted',
-        prospect_score: lead.prospectScore || 0,
-        notes: lead.notes,
-        osm_id: lead.osmId,
-        osm_tags: lead.osmTags,
-        campaign_id: lead.campaignId,
-        owner_user_id: lead.ownerUserId,
-        tags: lead.tags || [],
-        custom_fields: lead.customFields || {},
-      })
-      .select()
-      .single();
-
-    if (!error && data) {
-      const newLead: Lead = {
-        id: data.id,
-        myCompanyId: data.my_company_id,
-        companyName: data.company_name,
-        businessType: data.business_type,
-        address: data.address,
-        lat: data.lat,
-        lng: data.lng,
-        contactName: data.contact_name,
-        contactEmail: data.contact_email,
-        contactPhone: data.contact_phone,
-        website: data.website,
-        source: data.source,
-        channel: data.channel,
-        status: data.status,
-        prospectScore: data.prospect_score || 0,
-        contactAttempts: data.contact_attempts || 0,
-        lastContactedAt: data.last_contacted_at,
-        notes: data.notes,
-        osmId: data.osm_id,
-        osmTags: data.osm_tags,
-        campaignId: data.campaign_id,
-        convertedToOpportunityId: data.converted_to_opportunity_id,
-        convertedAt: data.converted_at,
-        convertedBy: data.converted_by,
-        ownerUserId: data.owner_user_id,
-        tags: data.tags || [],
-        customFields: data.custom_fields || {},
-        createdAt: data.created_at,
-        updatedAt: data.updated_at,
-      };
-      set(state => ({ leads: [newLead, ...state.leads] }));
-      return newLead;
-    }
-    return null;
-  },
-
-  updateLead: async (id: string, updates: Partial<Lead>) => {
-    const dbUpdates: Record<string, unknown> = {};
-    if (updates.companyName !== undefined) dbUpdates.company_name = updates.companyName;
-    if (updates.businessType !== undefined) dbUpdates.business_type = updates.businessType;
-    if (updates.address !== undefined) dbUpdates.address = updates.address;
-    if (updates.lat !== undefined) dbUpdates.lat = updates.lat;
-    if (updates.lng !== undefined) dbUpdates.lng = updates.lng;
-    if (updates.contactName !== undefined) dbUpdates.contact_name = updates.contactName;
-    if (updates.contactEmail !== undefined) dbUpdates.contact_email = updates.contactEmail;
-    if (updates.contactPhone !== undefined) dbUpdates.contact_phone = updates.contactPhone;
-    if (updates.website !== undefined) dbUpdates.website = updates.website;
-    if (updates.source !== undefined) dbUpdates.source = updates.source;
-    if (updates.channel !== undefined) dbUpdates.channel = updates.channel;
-    if (updates.status !== undefined) dbUpdates.status = updates.status;
-    if (updates.prospectScore !== undefined) dbUpdates.prospect_score = updates.prospectScore;
-    if (updates.notes !== undefined) dbUpdates.notes = updates.notes;
-    if (updates.tags !== undefined) dbUpdates.tags = updates.tags;
-
-    const { error } = await supabase
-      .from('leads')
-      .update(dbUpdates)
-      .eq('id', id);
-
-    if (!error) {
-      set(state => ({
-        leads: state.leads.map(l => l.id === id ? { ...l, ...updates } : l),
-        selectedLead: state.selectedLead?.id === id ? { ...state.selectedLead, ...updates } : state.selectedLead,
-      }));
-    }
-  },
-
-  deleteLead: async (id: string) => {
-    const { error } = await supabase.from('leads').delete().eq('id', id);
-    if (!error) {
-      set(state => ({
-        leads: state.leads.filter(l => l.id !== id),
-        selectedLead: state.selectedLead?.id === id ? null : state.selectedLead,
-      }));
-    }
-  },
-
-  setSelectedLead: (lead: Lead | null) => set({ selectedLead: lead }),
-
-  setFilter: (filter) => set(state => ({ filter: { ...state.filter, ...filter } })),
-
-  addActivity: async (activity: Partial<LeadActivity>) => {
-    const { data } = await supabase
-      .from('lead_activities')
-      .insert({
-        lead_id: activity.leadId,
-        activity_type: activity.activityType,
-        channel: activity.channel,
-        subject: activity.subject,
-        body: activity.body,
-        outcome: activity.outcome,
-        old_status: activity.oldStatus,
-        new_status: activity.newStatus,
-        performed_by: activity.performedBy,
-        metadata: activity.metadata,
-      })
-      .select()
-      .single();
-
-    if (data) {
-      const newActivity: LeadActivity = {
-        id: data.id,
-        leadId: data.lead_id,
-        activityType: data.activity_type,
-        channel: data.channel,
-        subject: data.subject,
-        body: data.body,
-        outcome: data.outcome,
-        oldStatus: data.old_status,
-        newStatus: data.new_status,
-        performedBy: data.performed_by,
-        metadata: data.metadata,
-        createdAt: data.created_at,
-      };
-      set(state => ({ activities: [newActivity, ...state.activities] }));
-    }
-  },
-
-  convertToOpportunity: async (leadId: string) => {
-    const { data, error } = await supabase.rpc('convert_lead_to_opportunity', {
-      p_lead_id: leadId,
-      p_converted_by: useAuthStore.getState().user?.id,
-    });
-
-    if (!error && data) {
-      // Refresh leads (the lead status will have changed)
-      get().fetchLeads();
-      return data.opportunity_id as string;
-    }
-    return null;
-  },
-}));
-
-// ==========================================
-// OPPORTUNITIES STORE (Sales Pipeline)
-// ==========================================
-
-interface OpportunitiesState {
-  opportunities: Opportunity[];
-  selectedOpportunity: Opportunity | null;
-  isLoading: boolean;
-  filter: {
-    stage?: OpportunityStage;
-    search?: string;
-  };
-
-  // Actions
-  fetchOpportunities: () => Promise<void>;
-  createOpportunity: (opp: Partial<Opportunity>) => Promise<Opportunity | null>;
-  updateOpportunity: (id: string, data: Partial<Opportunity>) => Promise<void>;
-  changeStage: (id: string, stage: OpportunityStage, stageData: Record<string, unknown>) => Promise<boolean>;
-  setSelectedOpportunity: (opp: Opportunity | null) => void;
-  setFilter: (filter: Partial<OpportunitiesState['filter']>) => void;
-}
-
-export const useOpportunitiesStore = create<OpportunitiesState>((set, get) => ({
-  opportunities: [],
-  selectedOpportunity: null,
-  isLoading: false,
-  filter: {},
-
-  fetchOpportunities: async () => {
-    const companyId = useCompanyStore.getState().selectedCompanyId;
-    if (!companyId) return;
-
-    set({ isLoading: true });
-    const { data, error } = await supabase
-      .from('opportunities')
-      .select('*')
-      .eq('my_company_id', companyId)
-      .order('created_at', { ascending: false });
-
-    if (!error && data) {
-      const opportunities: Opportunity[] = data.map((d: any) => ({
-        id: d.id,
-        myCompanyId: d.my_company_id,
-        leadId: d.lead_id,
-        clientId: d.client_id,
-        organizationId: d.organization_id,
-        title: d.title,
-        description: d.description,
-        stage: d.stage,
-        stageChangedAt: d.stage_changed_at,
-        daysInStage: d.days_in_stage || 0,
-        priority: d.priority || 'medium',
-        needDetected: d.need_detected,
-        nextAction: d.next_action || '',
-        nextActionDate: d.next_action_date || '',
-        responsibleUserId: d.responsible_user_id,
-        proposedService: d.proposed_service,
-        proposalSent: d.proposal_sent || false,
-        proposalDate: d.proposal_date,
-        estimatedAmountMin: d.estimated_amount_min,
-        estimatedAmountMax: d.estimated_amount_max,
-        currency: d.currency || 'UYU',
-        objections: d.objections,
-        lastInteractionAt: d.last_interaction_at,
-        nextInteractionDate: d.next_interaction_date,
-        tentativeAmount: d.tentative_amount,
-        finalAmount: d.final_amount,
-        finalCurrency: d.final_currency,
-        paymentType: d.payment_type,
-        startDate: d.start_date,
-        wonReason: d.won_reason,
-        wonAt: d.won_at,
-        lostReason: d.lost_reason,
-        lostNote: d.lost_note,
-        lostAt: d.lost_at,
-        probability: d.probability || 0,
-        expectedRevenue: d.expected_revenue,
-        ownerUserId: d.owner_user_id,
-        assignedUsers: d.assigned_users || [],
-        source: d.source,
-        sourceDetails: d.source_details,
-        tags: d.tags || [],
-        customFields: d.custom_fields || {},
-        isActive: d.is_active !== false,
-        createdAt: d.created_at,
-        updatedAt: d.updated_at,
-      }));
-      set({ opportunities, isLoading: false });
-    } else {
-      set({ isLoading: false });
-    }
-  },
-
-  createOpportunity: async (opp: Partial<Opportunity>) => {
-    const companyId = useCompanyStore.getState().selectedCompanyId;
-    if (!companyId) return null;
-
-    const { data, error } = await supabase
-      .from('opportunities')
-      .insert({
-        my_company_id: companyId,
-        lead_id: opp.leadId,
-        client_id: opp.clientId,
-        organization_id: opp.organizationId,
-        title: opp.title,
-        description: opp.description,
-        stage: opp.stage || 'qualified',
-        priority: opp.priority || 'medium',
-        need_detected: opp.needDetected,
-        next_action: opp.nextAction || 'Contactar',
-        next_action_date: opp.nextActionDate,
-        responsible_user_id: opp.responsibleUserId,
-        currency: opp.currency || 'UYU',
-        owner_user_id: opp.ownerUserId || useAuthStore.getState().user?.id,
-        source: opp.source,
-        tags: opp.tags || [],
-      })
-      .select()
-      .single();
-
-    if (!error && data) {
-      const newOpp: Opportunity = {
-        id: data.id,
-        myCompanyId: data.my_company_id,
-        title: data.title,
-        description: data.description,
-        stage: data.stage,
-        stageChangedAt: data.stage_changed_at,
-        daysInStage: 0,
-        priority: data.priority || 'medium',
-        nextAction: data.next_action || '',
-        nextActionDate: data.next_action_date || '',
-        proposalSent: false,
-        currency: data.currency || 'UYU',
-        probability: data.probability || 0,
-        isActive: true,
-        createdAt: data.created_at,
-        updatedAt: data.updated_at,
-      };
-      set(state => ({ opportunities: [newOpp, ...state.opportunities] }));
-      return newOpp;
-    }
-    return null;
-  },
-
-  updateOpportunity: async (id: string, updates: Partial<Opportunity>) => {
-    const dbUpdates: Record<string, unknown> = {};
-    if (updates.title !== undefined) dbUpdates.title = updates.title;
-    if (updates.description !== undefined) dbUpdates.description = updates.description;
-    if (updates.priority !== undefined) dbUpdates.priority = updates.priority;
-    if (updates.needDetected !== undefined) dbUpdates.need_detected = updates.needDetected;
-    if (updates.nextAction !== undefined) dbUpdates.next_action = updates.nextAction;
-    if (updates.nextActionDate !== undefined) dbUpdates.next_action_date = updates.nextActionDate;
-    if (updates.proposedService !== undefined) dbUpdates.proposed_service = updates.proposedService;
-    if (updates.proposalSent !== undefined) dbUpdates.proposal_sent = updates.proposalSent;
-    if (updates.proposalDate !== undefined) dbUpdates.proposal_date = updates.proposalDate;
-    if (updates.estimatedAmountMin !== undefined) dbUpdates.estimated_amount_min = updates.estimatedAmountMin;
-    if (updates.estimatedAmountMax !== undefined) dbUpdates.estimated_amount_max = updates.estimatedAmountMax;
-    if (updates.tentativeAmount !== undefined) dbUpdates.tentative_amount = updates.tentativeAmount;
-    if (updates.tags !== undefined) dbUpdates.tags = updates.tags;
-
-    const { error } = await supabase
-      .from('opportunities')
-      .update(dbUpdates)
-      .eq('id', id);
-
-    if (!error) {
-      set(state => ({
-        opportunities: state.opportunities.map(o => o.id === id ? { ...o, ...updates } : o),
-        selectedOpportunity: state.selectedOpportunity?.id === id ? { ...state.selectedOpportunity, ...updates } : state.selectedOpportunity,
-      }));
-    }
-  },
-
-  changeStage: async (id: string, stage: OpportunityStage, stageData: Record<string, unknown>) => {
-    const dbUpdates: Record<string, unknown> = { stage, ...stageData };
-
-    const { error } = await supabase
-      .from('opportunities')
-      .update(dbUpdates)
-      .eq('id', id);
-
-    if (!error) {
-      // Refresh after stage change (trigger updates probability, stage_changed_at, etc.)
-      get().fetchOpportunities();
-      return true;
-    }
-    return false;
-  },
-
-  setSelectedOpportunity: (opp: Opportunity | null) => set({ selectedOpportunity: opp }),
-
-  setFilter: (filter) => set(state => ({ filter: { ...state.filter, ...filter } })),
 }));

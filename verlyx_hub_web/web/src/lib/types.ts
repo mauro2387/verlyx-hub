@@ -1,12 +1,9 @@
 // Types - Modelos de datos basados en Flutter
 
-// Enums/Types para estados — canonical lowercase (matches DB CHECK constraints)
-export type TaskStatus = 'todo' | 'in_progress' | 'review' | 'blocked' | 'done' | 'cancelled';
-export type DealStage = 'lead' | 'qualified' | 'proposal' | 'negotiation' | 'won' | 'lost';
-export type Priority = 'low' | 'medium' | 'high' | 'urgent';
-export type ProjectStatus = 'backlog' | 'planning' | 'in_progress' | 'on_hold' | 'review' | 'done' | 'cancelled';
-export type ContactType = 'lead' | 'client' | 'partner' | 'supplier' | 'merchant';
-export type ContactStatus = 'new' | 'contacted' | 'qualified' | 'negotiation' | 'won' | 'lost' | 'inactive';
+// Enums/Types para estados
+export type TaskStatus = 'TODO' | 'IN_PROGRESS' | 'REVIEW' | 'BLOCKED' | 'DONE' | 'CANCELLED' | 'pending' | 'in_progress' | 'review' | 'completed' | 'cancelled';
+export type DealStage = 'LEAD' | 'QUALIFIED' | 'PROPOSAL' | 'NEGOTIATION' | 'CLOSED_WON' | 'CLOSED_LOST' | 'lead' | 'qualified' | 'proposal' | 'negotiation' | 'won' | 'lost';
+export type Priority = 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT' | 'CRITICAL' | 'low' | 'medium' | 'high' | 'critical';
 
 export interface Client {
   id: string;
@@ -18,7 +15,7 @@ export interface Client {
   company?: string;
   companyName?: string;
   position?: string;
-  type: ContactType | null;
+  type: 'client' | 'partner' | 'supplier' | 'merchant' | 'individual' | 'company' | 'lead' | null;
   description?: string | null;
   logoUrl?: string | null;
   primaryColor?: string | null;
@@ -37,7 +34,7 @@ export interface Project {
   clientCompanyId?: string | null;
   name: string;
   description?: string | null;
-  status: ProjectStatus;
+  status: 'backlog' | 'planning' | 'in_progress' | 'on_hold' | 'review' | 'done' | 'cancelled' | 'active' | 'completed';
   priority: Priority;
   budget?: number | null;
   spent?: number | null;
@@ -100,7 +97,7 @@ export interface Deal {
   name?: string;
   description?: string | null;
   stage: DealStage;
-  priority?: Priority;
+  priority?: 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT' | 'low' | 'medium' | 'high' | 'critical';
   amount?: number | null;
   value?: number;
   currency?: string;
@@ -152,11 +149,6 @@ export interface Document {
   folder?: string | null;
   mimeType?: string | null;
   size?: number | null;
-  tags?: string[] | null;
-  isPublic?: boolean;
-  projectId?: string | null;
-  contactId?: string | null;
-  dealId?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -914,7 +906,7 @@ export interface ContactHistory {
 export interface LeadScore {
   contactId: string;
   score: number; // 0-100
-  temperature: LeadTemperature;
+  temperature: 'cold' | 'warm' | 'hot';
   lastActivity?: string | null;
   factors: {
     engagement: number;
@@ -922,194 +914,4 @@ export interface LeadScore {
     budget: number;
     timing: number;
   };
-}
-
-// ==========================================
-// LEADS MODULE (Prospecting)
-// ==========================================
-
-export type LeadStatus = 'not_contacted' | 'contacted' | 'waiting_response' | 'responded' | 'not_interested';
-export type LeadSource = 'map' | 'manual' | 'referral' | 'social' | 'website' | 'campaign' | 'other';
-export type ContactChannel = 'email' | 'whatsapp' | 'call' | 'in_person' | 'instagram' | 'linkedin' | 'facebook' | 'other';
-
-export interface Lead {
-  id: string;
-  myCompanyId: string;
-  companyName: string;
-  businessType?: string | null;
-  address?: string | null;
-  lat?: number | null;
-  lng?: number | null;
-  contactName?: string | null;
-  contactEmail?: string | null;
-  contactPhone?: string | null;
-  website?: string | null;
-  source: LeadSource;
-  channel?: ContactChannel | null;
-  status: LeadStatus;
-  prospectScore: number;
-  contactAttempts: number;
-  lastContactedAt?: string | null;
-  notes?: string | null;
-  osmId?: number | null;
-  osmTags?: Record<string, string> | null;
-  campaignId?: string | null;
-  convertedToOpportunityId?: string | null;
-  convertedAt?: string | null;
-  convertedBy?: string | null;
-  ownerUserId?: string | null;
-  tags?: string[];
-  customFields?: Record<string, unknown>;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface LeadActivity {
-  id: string;
-  leadId: string;
-  activityType: 'call' | 'email' | 'whatsapp' | 'visit' | 'meeting' | 'note' | 'status_change' | 'score_update';
-  channel?: ContactChannel | null;
-  subject?: string | null;
-  body?: string | null;
-  outcome?: string | null;
-  oldStatus?: LeadStatus | null;
-  newStatus?: LeadStatus | null;
-  performedBy?: string | null;
-  metadata?: Record<string, unknown>;
-  createdAt: string;
-}
-
-export interface ProspectingCampaign {
-  id: string;
-  myCompanyId: string;
-  name: string;
-  description?: string | null;
-  status: 'draft' | 'active' | 'paused' | 'completed';
-  searchCriteria?: Record<string, unknown>;
-  targetArea?: string | null;
-  targetBusinessTypes?: string[];
-  emailTemplate?: string | null;
-  whatsappTemplate?: string | null;
-  totalLeads: number;
-  contactedLeads: number;
-  respondedLeads: number;
-  convertedLeads: number;
-  startDate?: string | null;
-  endDate?: string | null;
-  createdBy?: string | null;
-  createdAt: string;
-  updatedAt: string;
-}
-
-// ==========================================
-// OPPORTUNITIES MODULE (Sales Pipeline)
-// ==========================================
-
-export type OpportunityStage = 'qualified' | 'proposal' | 'negotiation' | 'won' | 'lost';
-export type ObjectionType = 'price_too_high' | 'budget_not_approved' | 'timing_not_right' | 'competitor_preferred' | 'feature_missing' | 'decision_maker_unavailable' | 'internal_priority_change' | 'contract_terms' | 'other';
-export type PaymentType = 'one_time' | 'monthly' | 'quarterly' | 'annual' | 'milestone' | 'custom';
-
-export interface Opportunity {
-  id: string;
-  myCompanyId: string;
-  leadId?: string | null;
-  clientId?: string | null;
-  organizationId?: string | null;
-  title: string;
-  description?: string | null;
-  stage: OpportunityStage;
-  stageChangedAt?: string | null;
-  daysInStage: number;
-  priority: Priority;
-
-  // Qualified fields
-  needDetected?: string | null;
-  nextAction: string;
-  nextActionDate: string;
-  responsibleUserId?: string | null;
-
-  // Proposal fields
-  proposedService?: string | null;
-  proposalSent: boolean;
-  proposalDate?: string | null;
-  estimatedAmountMin?: number | null;
-  estimatedAmountMax?: number | null;
-  currency: string;
-
-  // Negotiation fields
-  objections?: ObjectionType[];
-  lastInteractionAt?: string | null;
-  nextInteractionDate?: string | null;
-  tentativeAmount?: number | null;
-
-  // Won fields
-  finalAmount?: number | null;
-  finalCurrency?: string | null;
-  paymentType?: PaymentType | null;
-  startDate?: string | null;
-  wonReason?: string | null;
-  wonAt?: string | null;
-
-  // Lost fields
-  lostReason?: string | null;
-  lostNote?: string | null;
-  lostAt?: string | null;
-
-  // Computed
-  probability: number;
-  expectedRevenue?: number | null;
-
-  // Ownership
-  ownerUserId?: string | null;
-  assignedUsers?: string[];
-
-  // Metadata
-  source?: string | null;
-  sourceDetails?: string | null;
-  tags?: string[];
-  customFields?: Record<string, unknown>;
-  isActive: boolean;
-  createdAt: string;
-  updatedAt: string;
-}
-
-// ==========================================
-// AI ROUTER TYPES
-// ==========================================
-
-export type AITaskType = 'classify' | 'generate_email' | 'generate_whatsapp' | 'interpret_tags' | 'score_lead' | 'summarize' | 'extract' | 'chat' | 'analyze';
-
-export interface AIRequestLog {
-  id: string;
-  myCompanyId?: string | null;
-  userId?: string | null;
-  taskType: AITaskType;
-  modelUsed: string;
-  promptTokens: number;
-  completionTokens: number;
-  totalTokens: number;
-  estimatedCostUsd: number;
-  latencyMs: number;
-  status: 'success' | 'error' | 'timeout' | 'retry';
-  errorMessage?: string | null;
-  retryCount: number;
-  requestSummary?: string | null;
-  responseSummary?: string | null;
-  createdAt: string;
-}
-
-export interface AIUsageSummary {
-  id: string;
-  myCompanyId: string;
-  periodStart: string;
-  periodEnd: string;
-  totalRequests: number;
-  totalTokens: number;
-  totalCostUsd: number;
-  requestsByTask: Record<string, number>;
-  tokensByModel: Record<string, number>;
-  costByModel: Record<string, number>;
-  errorRate: number;
-  avgLatencyMs: number;
-  createdAt: string;
 }

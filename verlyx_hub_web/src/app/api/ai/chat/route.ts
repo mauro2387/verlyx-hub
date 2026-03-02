@@ -1,4 +1,12 @@
-import { createAnthropic } from '@ai-sdk/anthropic';
+// ============================================================
+// AI CHAT ROUTE — OpenAI via AI SDK
+// Verlyx Hub Enterprise Architecture
+// ============================================================
+// Uses the Vercel AI SDK with OpenAI provider.
+// Replaced Anthropic/Claude with OpenAI GPT-4.1.
+// ============================================================
+
+import { createOpenAI } from '@ai-sdk/openai';
 import { streamText, tool, stepCountIs } from 'ai';
 import { z } from 'zod';
 import { createClient } from '@supabase/supabase-js';
@@ -9,8 +17,8 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-const anthropic = createAnthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY!,
+const openai = createOpenAI({
+  apiKey: process.env.OPENAI_API_KEY!,
 });
 
 // ==========================================
@@ -22,7 +30,7 @@ async function buildBusinessContext(userId: string): Promise<string> {
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
   const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString();
 
-  // Parallel fetch all needed data
+  // Parallel fetch all needed data (including new leads & opportunities)
   const [
     companiesRes,
     dealsRes,
@@ -31,6 +39,8 @@ async function buildBusinessContext(userId: string): Promise<string> {
     incomesRes,
     expensesRes,
     accountsRes,
+    leadsRes,
+    opportunitiesRes,
   ] = await Promise.all([
     supabase.from('my_companies').select('id, name, currency').eq('user_id', userId),
     supabase.from('deals').select('id, name, stage, value, currency, expected_close_date, contact_id').eq('user_id', userId).order('created_at', { ascending: false }).limit(50),
@@ -39,6 +49,8 @@ async function buildBusinessContext(userId: string): Promise<string> {
     supabase.from('incomes').select('id, description, amount, currency, status, due_date, payment_date').gte('created_at', monthStart).lte('created_at', monthEnd).limit(50),
     supabase.from('expenses').select('id, description, amount, currency, status, payment_date').gte('created_at', monthStart).lte('created_at', monthEnd).limit(50),
     supabase.from('accounts').select('id, name, type, currency, current_balance').limit(20),
+    supabase.from('leads').select('id, company_name, status, source, prospect_score, contact_attempts, created_at').order('created_at', { ascending: false }).limit(30),
+    supabase.from('opportunities').select('id, title, stage, tentative_amount, final_amount, probability, currency, next_action_date').order('created_at', { ascending: false }).limit(30),
   ]);
 
   const companies = companiesRes.data || [];
@@ -48,6 +60,8 @@ async function buildBusinessContext(userId: string): Promise<string> {
   const incomes = incomesRes.data || [];
   const expenses = expensesRes.data || [];
   const accounts = accountsRes.data || [];
+  const leads = leadsRes.data || [];
+  const opportunities = opportunitiesRes.data || [];
 
   // Calculate summaries
   const activeDeals = deals.filter(d => !['won', 'lost'].includes(d.stage));
@@ -68,6 +82,14 @@ async function buildBusinessContext(userId: string): Promise<string> {
 
   const overdueIncomes = incomes.filter(i => i.status === 'pending' && i.due_date && new Date(i.due_date) < now);
 
+  // Leads stats
+  const activeLeads = leads.filter((l: any) => l.status !== 'not_interested');
+  const respondedLeads = leads.filter((l: any) => l.status === 'responded');
+
+  // Opportunities stats
+  const activeOpps = opportunities.filter((o: any) => !['won', 'lost'].includes(o.stage));
+  const oppPipelineValue = activeOpps.reduce((sum: number, o: any) => sum + (o.tentative_amount || o.final_amount || 0), 0);
+
   return `
 CONTEXTO DEL NEGOCIO (datos en tiempo real de Supabase):
 ═══════════════════════════════════════════
@@ -84,7 +106,21 @@ Balance total cuentas: $${totalBalance.toLocaleString()}
 Cuentas: ${accounts.map(a => `${a.name}: $${(a.current_balance || 0).toLocaleString()} ${a.currency}`).join(' | ') || 'Sin cuentas'}
 ${overdueIncomes.length > 0 ? `⚠️ Ingresos vencidos: ${overdueIncomes.length} por $${overdueIncomes.reduce((s, i) => s + (i.amount || 0), 0).toLocaleString()}` : ''}
 
-── PIPELINE CRM ──
+── PROSPECCIÓN (LEADS) ──
+Total leads: ${leads.length}
+Leads activos: ${activeLeads.length}
+Respondidos (listos para conversión): ${respondedLeads.length}
+Score promedio: ${activeLeads.length > 0 ? Math.round(activeLeads.reduce((s: number, l: any) => s + (l.prospect_score || 0), 0) / activeLeads.length) : 0}/100
+${respondedLeads.length > 0 ? `🟢 Leads listos: ${respondedLeads.slice(0, 3).map((l: any) => `"${l.company_name}" (score: ${l.prospect_score})`).join(', ')}` : ''}
+
+── PIPELINE OPORTUNIDADES ──
+Oportunidades activas: ${activeOpps.length} por $${oppPipelineValue.toLocaleString()}
+${['qualified', 'proposal', 'negotiation'].map(stage => {
+    const stageOpps = activeOpps.filter((o: any) => o.stage === stage);
+    return `${stage}: ${stageOpps.length} ($${stageOpps.reduce((s: number, o: any) => s + (o.tentative_amount || 0), 0).toLocaleString()})`;
+  }).join(' | ')}
+
+── PIPELINE CRM (LEGACY) ──
 Deals activos: ${activeDeals.length} por $${pipelineValue.toLocaleString()}
 Deals ganados (histórico): ${wonDeals.length} por $${wonValue.toLocaleString()}
 Pipeline por etapa: ${['lead', 'qualified', 'proposal', 'negotiation'].map(stage => {
@@ -305,6 +341,78 @@ const aiTools = {
       };
     },
   }),
+
+  // NEW: Lead management tools
+  get_leads_summary: tool({
+    description: 'Obtiene resumen de leads/prospectos con estadísticas por estado y fuente',
+    inputSchema: z.object({
+      status: z.enum(['not_contacted', 'contacted', 'waiting_response', 'responded', 'not_interested']).optional().describe('Filtrar por estado'),
+    }),
+    execute: async ({ status }) => {
+      let query = supabase.from('leads').select('id, company_name, status, source, prospect_score, contact_attempts, created_at');
+      if (status) query = query.eq('status', status);
+      const { data: allLeads, error } = await query.order('prospect_score', { ascending: false }).limit(50);
+      
+      if (error) return { error: error.message };
+      const leadList = allLeads || [];
+      
+      return {
+        total: leadList.length,
+        por_estado: {
+          no_contactados: leadList.filter(l => l.status === 'not_contacted').length,
+          contactados: leadList.filter(l => l.status === 'contacted').length,
+          esperando_respuesta: leadList.filter(l => l.status === 'waiting_response').length,
+          respondidos: leadList.filter(l => l.status === 'responded').length,
+          no_interesados: leadList.filter(l => l.status === 'not_interested').length,
+        },
+        score_promedio: leadList.length > 0 ? Math.round(leadList.reduce((s, l) => s + (l.prospect_score || 0), 0) / leadList.length) : 0,
+        top_leads: leadList.slice(0, 10).map(l => ({
+          nombre: l.company_name,
+          estado: l.status,
+          fuente: l.source,
+          score: l.prospect_score,
+          intentos_contacto: l.contact_attempts,
+        })),
+      };
+    },
+  }),
+
+  get_opportunities_pipeline: tool({
+    description: 'Obtiene el pipeline de oportunidades con valor por etapa y probabilidad',
+    inputSchema: z.object({
+      stage: z.enum(['qualified', 'proposal', 'negotiation', 'won', 'lost']).optional().describe('Filtrar por etapa'),
+    }),
+    execute: async ({ stage }) => {
+      let query = supabase.from('opportunities').select('id, title, stage, tentative_amount, final_amount, probability, currency, next_action_date, days_in_stage');
+      if (stage) query = query.eq('stage', stage);
+      const { data: opps, error } = await query.order('created_at', { ascending: false }).limit(50);
+      
+      if (error) return { error: error.message };
+      const allOpps = opps || [];
+      const activeO = allOpps.filter(o => !['won', 'lost'].includes(o.stage));
+      
+      return {
+        total_activas: activeO.length,
+        valor_pipeline: activeO.reduce((s, o) => s + (o.tentative_amount || o.final_amount || 0), 0),
+        por_etapa: {
+          qualified: allOpps.filter(o => o.stage === 'qualified').length,
+          proposal: allOpps.filter(o => o.stage === 'proposal').length,
+          negotiation: allOpps.filter(o => o.stage === 'negotiation').length,
+          won: allOpps.filter(o => o.stage === 'won').length,
+          lost: allOpps.filter(o => o.stage === 'lost').length,
+        },
+        top_oportunidades: activeO.slice(0, 10).map(o => ({
+          titulo: o.title,
+          etapa: o.stage,
+          monto: o.tentative_amount || o.final_amount || 0,
+          probabilidad: o.probability,
+          moneda: o.currency,
+          siguiente_accion: o.next_action_date,
+          dias_en_etapa: o.days_in_stage,
+        })),
+      };
+    },
+  }),
 };
 
 // ==========================================
@@ -314,10 +422,10 @@ const aiTools = {
 export async function POST(req: Request) {
   try {
     // Validate API key exists
-    if (!process.env.ANTHROPIC_API_KEY) {
+    if (!process.env.OPENAI_API_KEY) {
       return new Response(
         JSON.stringify({
-          error: 'ANTHROPIC_API_KEY no configurada. Agrega tu API key en .env.local',
+          error: 'OPENAI_API_KEY no configurada. Agrega tu API key en .env.local',
           fallback: true,
         }),
         { status: 503, headers: { 'Content-Type': 'application/json' } }
@@ -352,11 +460,14 @@ INSTRUCCIONES:
 - Si necesitas ejecutar una acción (crear tarea, mover deal, etc.), usa las herramientas disponibles
 - Formatea con bullet points y secciones claras cuando la respuesta es compleja
 - Si no tienes datos suficientes, dilo honestamente
-- Incluye recomendaciones proactivas cuando sea relevante (ej: "Tienes 3 facturas vencidas, ¿quieres que las revise?")
-- Nunca inventes datos. Solo usa la información del contexto o la que obtengas via tools`;
+- Incluye recomendaciones proactivas cuando sea relevante
+- Nunca inventes datos. Solo usa la información del contexto o la que obtengas via tools
+- Para leads/prospectos, usa get_leads_summary
+- Para oportunidades de ventas, usa get_opportunities_pipeline
+- Si el usuario quiere convertir un lead a oportunidad, explica que el lead debe estar en estado "responded"`;
 
     const result = streamText({
-      model: anthropic('claude-sonnet-4-20250514'),
+      model: openai('gpt-4.1'),
       system: systemPrompt,
       messages,
       tools: aiTools,
@@ -364,10 +475,11 @@ INSTRUCCIONES:
     });
 
     return result.toUIMessageStreamResponse();
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('AI Chat Error:', error);
+    const message = error instanceof Error ? error.message : 'Error del servidor';
     return new Response(
-      JSON.stringify({ error: error?.message || 'Error del servidor' }),
+      JSON.stringify({ error: message }),
       { status: 500, headers: { 'Content-Type': 'application/json' } }
     );
   }
