@@ -113,16 +113,24 @@ ALTER TABLE contacts ALTER COLUMN status SET DEFAULT 'new';
 
 ALTER TABLE payment_links DROP CONSTRAINT IF EXISTS payment_link_status_check;
 
-ALTER TABLE payment_links ADD CONSTRAINT payment_link_status_check 
-  CHECK (status IN ('active', 'expired', 'paid', 'cancelled'));
+-- Normalize any non-canonical values before adding constraint
+UPDATE payment_links SET status = 'paid' WHERE status = 'completed';
+UPDATE payment_links SET status = 'pending' WHERE status NOT IN ('pending', 'active', 'expired', 'paid', 'cancelled', 'rejected');
 
-ALTER TABLE payment_links ALTER COLUMN status SET DEFAULT 'active';
+ALTER TABLE payment_links ADD CONSTRAINT payment_link_status_check 
+  CHECK (status IN ('pending', 'active', 'expired', 'paid', 'cancelled', 'rejected'));
+
+ALTER TABLE payment_links ALTER COLUMN status SET DEFAULT 'pending';
 
 -- =====================
 -- PAYMENTS constraints
 -- =====================
 
 ALTER TABLE payments DROP CONSTRAINT IF EXISTS payment_status_check;
+
+-- Normalize any non-canonical values before adding constraint
+UPDATE payments SET status = 'approved' WHERE status = 'completed';
+UPDATE payments SET status = 'pending' WHERE status NOT IN ('pending', 'approved', 'rejected', 'cancelled', 'refunded');
 
 ALTER TABLE payments ADD CONSTRAINT payment_status_check 
   CHECK (status IN ('pending', 'approved', 'rejected', 'cancelled', 'refunded'));
@@ -234,12 +242,12 @@ SELECT
 DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM pg_proc WHERE proname = 'calculate_project_progress') THEN
-    -- Will be replaced below
-    RAISE NOTICE 'Replacing calculate_project_progress function';
+    DROP FUNCTION calculate_project_progress(UUID);
+    RAISE NOTICE 'Dropped old calculate_project_progress function';
   END IF;
 END $$;
 
-CREATE OR REPLACE FUNCTION calculate_project_progress(p_project_id UUID)
+CREATE FUNCTION calculate_project_progress(p_project_id UUID)
 RETURNS INTEGER AS $$
 DECLARE
   total_tasks INT;

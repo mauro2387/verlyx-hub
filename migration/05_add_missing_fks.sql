@@ -14,29 +14,37 @@
 -- =====================
 
 DO $$ BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_quotes_user') THEN
-    ALTER TABLE quotes ADD CONSTRAINT fk_quotes_user 
-      FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE SET NULL NOT VALID;
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_quotes_contact') THEN
-    ALTER TABLE quotes ADD CONSTRAINT fk_quotes_contact 
-      FOREIGN KEY (contact_id) REFERENCES contacts(id) ON DELETE SET NULL NOT VALID;
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_quotes_deal') THEN
-    ALTER TABLE quotes ADD CONSTRAINT fk_quotes_deal 
-      FOREIGN KEY (deal_id) REFERENCES deals(id) ON DELETE SET NULL NOT VALID;
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_quotes_company') THEN
-    ALTER TABLE quotes ADD CONSTRAINT fk_quotes_company 
-      FOREIGN KEY (my_company_id) REFERENCES my_companies(id) ON DELETE CASCADE NOT VALID;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'quotes' AND table_schema = 'public') THEN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_quotes_user') THEN
+      ALTER TABLE quotes ADD CONSTRAINT fk_quotes_user 
+        FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE SET NULL NOT VALID;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_quotes_contact') THEN
+      ALTER TABLE quotes ADD CONSTRAINT fk_quotes_contact 
+        FOREIGN KEY (contact_id) REFERENCES contacts(id) ON DELETE SET NULL NOT VALID;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_quotes_deal') THEN
+      ALTER TABLE quotes ADD CONSTRAINT fk_quotes_deal 
+        FOREIGN KEY (deal_id) REFERENCES deals(id) ON DELETE SET NULL NOT VALID;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_quotes_company') THEN
+      ALTER TABLE quotes ADD CONSTRAINT fk_quotes_company 
+        FOREIGN KEY (my_company_id) REFERENCES my_companies(id) ON DELETE CASCADE NOT VALID;
+    END IF;
+  ELSE
+    RAISE NOTICE 'Skipping quotes FKs — table does not exist';
   END IF;
 END $$;
 
 -- QUOTE_ITEMS
 DO $$ BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_quote_items_product') THEN
-    ALTER TABLE quote_items ADD CONSTRAINT fk_quote_items_product 
-      FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE SET NULL NOT VALID;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'quote_items' AND table_schema = 'public') THEN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_quote_items_product') THEN
+      ALTER TABLE quote_items ADD CONSTRAINT fk_quote_items_product 
+        FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE SET NULL NOT VALID;
+    END IF;
+  ELSE
+    RAISE NOTICE 'Skipping quote_items FKs — table does not exist';
   END IF;
 END $$;
 
@@ -45,21 +53,25 @@ END $$;
 -- =====================
 
 DO $$ BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_time_entries_user') THEN
-    ALTER TABLE time_entries ADD CONSTRAINT fk_time_entries_user 
-      FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE SET NULL NOT VALID;
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_time_entries_project') THEN
-    ALTER TABLE time_entries ADD CONSTRAINT fk_time_entries_project 
-      FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE SET NULL NOT VALID;
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_time_entries_task') THEN
-    ALTER TABLE time_entries ADD CONSTRAINT fk_time_entries_task 
-      FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE SET NULL NOT VALID;
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_time_entries_company') THEN
-    ALTER TABLE time_entries ADD CONSTRAINT fk_time_entries_company 
-      FOREIGN KEY (my_company_id) REFERENCES my_companies(id) ON DELETE CASCADE NOT VALID;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'time_entries' AND table_schema = 'public') THEN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_time_entries_user') THEN
+      ALTER TABLE time_entries ADD CONSTRAINT fk_time_entries_user 
+        FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE SET NULL NOT VALID;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_time_entries_project') THEN
+      ALTER TABLE time_entries ADD CONSTRAINT fk_time_entries_project 
+        FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE SET NULL NOT VALID;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_time_entries_task') THEN
+      ALTER TABLE time_entries ADD CONSTRAINT fk_time_entries_task 
+        FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE SET NULL NOT VALID;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_time_entries_company') THEN
+      ALTER TABLE time_entries ADD CONSTRAINT fk_time_entries_company 
+        FOREIGN KEY (my_company_id) REFERENCES my_companies(id) ON DELETE CASCADE NOT VALID;
+    END IF;
+  ELSE
+    RAISE NOTICE 'Skipping time_entries FKs — table does not exist';
   END IF;
 END $$;
 
@@ -68,13 +80,17 @@ END $$;
 -- =====================
 
 DO $$ BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_products_user') THEN
-    ALTER TABLE products ADD CONSTRAINT fk_products_user 
-      FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE SET NULL NOT VALID;
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_products_company') THEN
-    ALTER TABLE products ADD CONSTRAINT fk_products_company 
-      FOREIGN KEY (my_company_id) REFERENCES my_companies(id) ON DELETE CASCADE NOT VALID;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'products' AND table_schema = 'public') THEN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_products_user') THEN
+      ALTER TABLE products ADD CONSTRAINT fk_products_user 
+        FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE SET NULL NOT VALID;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_products_company') THEN
+      ALTER TABLE products ADD CONSTRAINT fk_products_company 
+        FOREIGN KEY (my_company_id) REFERENCES my_companies(id) ON DELETE CASCADE NOT VALID;
+    END IF;
+  ELSE
+    RAISE NOTICE 'Skipping products FKs — table does not exist';
   END IF;
 END $$;
 
@@ -83,13 +99,17 @@ END $$;
 -- =====================
 
 DO $$ BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_goals_user') THEN
-    ALTER TABLE goals ADD CONSTRAINT fk_goals_user 
-      FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE SET NULL NOT VALID;
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_goals_company') THEN
-    ALTER TABLE goals ADD CONSTRAINT fk_goals_company 
-      FOREIGN KEY (my_company_id) REFERENCES my_companies(id) ON DELETE CASCADE NOT VALID;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'goals' AND table_schema = 'public') THEN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_goals_user') THEN
+      ALTER TABLE goals ADD CONSTRAINT fk_goals_user 
+        FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE SET NULL NOT VALID;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_goals_company') THEN
+      ALTER TABLE goals ADD CONSTRAINT fk_goals_company 
+        FOREIGN KEY (my_company_id) REFERENCES my_companies(id) ON DELETE CASCADE NOT VALID;
+    END IF;
+  ELSE
+    RAISE NOTICE 'Skipping goals FKs — table does not exist';
   END IF;
 END $$;
 
@@ -98,21 +118,29 @@ END $$;
 -- =====================
 
 DO $$ BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_automations_created_by') THEN
-    ALTER TABLE automations ADD CONSTRAINT fk_automations_created_by 
-      FOREIGN KEY (created_by) REFERENCES auth.users(id) ON DELETE SET NULL NOT VALID;
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_automations_company') THEN
-    ALTER TABLE automations ADD CONSTRAINT fk_automations_company 
-      FOREIGN KEY (my_company_id) REFERENCES my_companies(id) ON DELETE CASCADE NOT VALID;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'automations' AND table_schema = 'public') THEN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_automations_created_by') THEN
+      ALTER TABLE automations ADD CONSTRAINT fk_automations_created_by 
+        FOREIGN KEY (created_by) REFERENCES auth.users(id) ON DELETE SET NULL NOT VALID;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_automations_company') THEN
+      ALTER TABLE automations ADD CONSTRAINT fk_automations_company 
+        FOREIGN KEY (my_company_id) REFERENCES my_companies(id) ON DELETE CASCADE NOT VALID;
+    END IF;
+  ELSE
+    RAISE NOTICE 'Skipping automations FKs — table does not exist';
   END IF;
 END $$;
 
 -- AUTOMATION_STEPS
 DO $$ BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_automation_steps_parent') THEN
-    ALTER TABLE automation_steps ADD CONSTRAINT fk_automation_steps_parent 
-      FOREIGN KEY (parent_step_id) REFERENCES automation_steps(id) ON DELETE SET NULL NOT VALID;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'automation_steps' AND table_schema = 'public') THEN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_automation_steps_parent') THEN
+      ALTER TABLE automation_steps ADD CONSTRAINT fk_automation_steps_parent 
+        FOREIGN KEY (parent_step_id) REFERENCES automation_steps(id) ON DELETE SET NULL NOT VALID;
+    END IF;
+  ELSE
+    RAISE NOTICE 'Skipping automation_steps FKs — table does not exist';
   END IF;
 END $$;
 
@@ -235,7 +263,7 @@ DO $$ BEGIN
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'contact_segment_members') THEN
     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_segment_members_segment') THEN
       ALTER TABLE contact_segment_members ADD CONSTRAINT fk_segment_members_segment 
-        FOREIGN KEY (segment_id) REFERENCES client_segments(id) ON DELETE CASCADE NOT VALID;
+        FOREIGN KEY (segment_id) REFERENCES contact_segments(id) ON DELETE CASCADE NOT VALID;
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_segment_members_contact') THEN
       ALTER TABLE contact_segment_members ADD CONSTRAINT fk_segment_members_contact 
@@ -256,7 +284,7 @@ DO $$ BEGIN
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_scheduled_comm_segment') THEN
       ALTER TABLE scheduled_communications ADD CONSTRAINT fk_scheduled_comm_segment 
-        FOREIGN KEY (segment_id) REFERENCES client_segments(id) ON DELETE SET NULL NOT VALID;
+        FOREIGN KEY (segment_id) REFERENCES contact_segments(id) ON DELETE SET NULL NOT VALID;
     END IF;
   END IF;
 END $$;

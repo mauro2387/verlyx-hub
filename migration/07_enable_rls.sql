@@ -7,6 +7,7 @@
 
 -- =====================
 -- PAYMENT_LINKS
+-- (no user_id/my_company_id — route through project_id or deal_id)
 -- =====================
 
 ALTER TABLE payment_links ENABLE ROW LEVEL SECURITY;
@@ -14,26 +15,54 @@ ALTER TABLE payment_links ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Users can view their payment_links" ON payment_links;
 CREATE POLICY "Users can view their payment_links" ON payment_links
   FOR SELECT USING (
-    user_id = auth.uid() OR
-    my_company_id IN (SELECT company_id FROM company_users WHERE user_id = auth.uid())
+    auth.uid() IS NOT NULL AND (
+      project_id IN (
+        SELECT id FROM projects WHERE my_company_id IN (
+          SELECT company_id FROM company_users WHERE user_id = auth.uid()
+        )
+      )
+      OR deal_id IN (
+        SELECT id FROM deals WHERE user_id = auth.uid()
+      )
+      OR (project_id IS NULL AND deal_id IS NULL)
+    )
   );
 
 DROP POLICY IF EXISTS "Users can create payment_links" ON payment_links;
 CREATE POLICY "Users can create payment_links" ON payment_links
   FOR INSERT WITH CHECK (
-    user_id = auth.uid() OR
-    my_company_id IN (SELECT company_id FROM company_users WHERE user_id = auth.uid())
+    auth.uid() IS NOT NULL AND (
+      project_id IN (
+        SELECT id FROM projects WHERE my_company_id IN (
+          SELECT company_id FROM company_users WHERE user_id = auth.uid()
+        )
+      )
+      OR deal_id IN (
+        SELECT id FROM deals WHERE user_id = auth.uid()
+      )
+      OR (project_id IS NULL AND deal_id IS NULL)
+    )
   );
 
 DROP POLICY IF EXISTS "Users can update their payment_links" ON payment_links;
 CREATE POLICY "Users can update their payment_links" ON payment_links
   FOR UPDATE USING (
-    user_id = auth.uid() OR
-    my_company_id IN (SELECT company_id FROM company_users WHERE user_id = auth.uid())
+    auth.uid() IS NOT NULL AND (
+      project_id IN (
+        SELECT id FROM projects WHERE my_company_id IN (
+          SELECT company_id FROM company_users WHERE user_id = auth.uid()
+        )
+      )
+      OR deal_id IN (
+        SELECT id FROM deals WHERE user_id = auth.uid()
+      )
+      OR (project_id IS NULL AND deal_id IS NULL)
+    )
   );
 
 -- =====================
 -- PAYMENTS
+-- (no user_id/my_company_id — route through payment_link_id → project_id or deal_id)
 -- =====================
 
 ALTER TABLE payments ENABLE ROW LEVEL SECURITY;
@@ -41,19 +70,33 @@ ALTER TABLE payments ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Users can view their payments" ON payments;
 CREATE POLICY "Users can view their payments" ON payments
   FOR SELECT USING (
-    user_id = auth.uid() OR
-    my_company_id IN (SELECT company_id FROM company_users WHERE user_id = auth.uid())
+    auth.uid() IS NOT NULL AND (
+      payment_link_id IN (
+        SELECT id FROM payment_links
+        WHERE project_id IN (
+          SELECT id FROM projects WHERE my_company_id IN (
+            SELECT company_id FROM company_users WHERE user_id = auth.uid()
+          )
+        )
+        OR deal_id IN (SELECT id FROM deals WHERE user_id = auth.uid())
+        OR (project_id IS NULL AND deal_id IS NULL)
+      )
+      OR project_id IN (
+        SELECT id FROM projects WHERE my_company_id IN (
+          SELECT company_id FROM company_users WHERE user_id = auth.uid()
+        )
+      )
+      OR deal_id IN (SELECT id FROM deals WHERE user_id = auth.uid())
+    )
   );
 
 DROP POLICY IF EXISTS "Users can create payments" ON payments;
 CREATE POLICY "Users can create payments" ON payments
-  FOR INSERT WITH CHECK (
-    user_id = auth.uid() OR
-    my_company_id IN (SELECT company_id FROM company_users WHERE user_id = auth.uid())
-  );
+  FOR INSERT WITH CHECK (auth.uid() IS NOT NULL);
 
 -- =====================
 -- REFUNDS (if exists)
+-- (no user_id/my_company_id — route through payment_id → payments)
 -- =====================
 
 DO $$ BEGIN
@@ -63,19 +106,28 @@ DO $$ BEGIN
     DROP POLICY IF EXISTS "Users can view their refunds" ON refunds;
     EXECUTE 'CREATE POLICY "Users can view their refunds" ON refunds
       FOR SELECT USING (
-        my_company_id IN (SELECT company_id FROM company_users WHERE user_id = auth.uid())
+        auth.uid() IS NOT NULL AND (
+          payment_id IN (
+            SELECT id FROM payments
+            WHERE project_id IN (
+              SELECT id FROM projects WHERE my_company_id IN (
+                SELECT company_id FROM company_users WHERE user_id = auth.uid()
+              )
+            )
+            OR deal_id IN (SELECT id FROM deals WHERE user_id = auth.uid())
+          )
+        )
       )';
       
     DROP POLICY IF EXISTS "Users can create refunds" ON refunds;
     EXECUTE 'CREATE POLICY "Users can create refunds" ON refunds
-      FOR INSERT WITH CHECK (
-        my_company_id IN (SELECT company_id FROM company_users WHERE user_id = auth.uid())
-      )';
+      FOR INSERT WITH CHECK (auth.uid() IS NOT NULL)';
   END IF;
 END $$;
 
 -- =====================
 -- DOCUMENTS (if RLS not already enabled)
+-- (has user_id and project_id/contact_id but no my_company_id)
 -- =====================
 
 DO $$ BEGIN
@@ -89,28 +141,39 @@ DO $$ BEGIN
     EXECUTE 'CREATE POLICY "Users can view their documents" ON documents
       FOR SELECT USING (
         user_id = auth.uid() OR
-        my_company_id IN (SELECT company_id FROM company_users WHERE user_id = auth.uid())
+        project_id IN (
+          SELECT id FROM projects WHERE my_company_id IN (
+            SELECT company_id FROM company_users WHERE user_id = auth.uid()
+          )
+        )
       )';
       
     DROP POLICY IF EXISTS "Users can create documents" ON documents;
     EXECUTE 'CREATE POLICY "Users can create documents" ON documents
       FOR INSERT WITH CHECK (
         user_id = auth.uid() OR
-        my_company_id IN (SELECT company_id FROM company_users WHERE user_id = auth.uid())
+        project_id IN (
+          SELECT id FROM projects WHERE my_company_id IN (
+            SELECT company_id FROM company_users WHERE user_id = auth.uid()
+          )
+        )
       )';
       
     DROP POLICY IF EXISTS "Users can update their documents" ON documents;
     EXECUTE 'CREATE POLICY "Users can update their documents" ON documents
       FOR UPDATE USING (
         user_id = auth.uid() OR
-        my_company_id IN (SELECT company_id FROM company_users WHERE user_id = auth.uid())
+        project_id IN (
+          SELECT id FROM projects WHERE my_company_id IN (
+            SELECT company_id FROM company_users WHERE user_id = auth.uid()
+          )
+        )
       )';
       
     DROP POLICY IF EXISTS "Users can delete their documents" ON documents;
     EXECUTE 'CREATE POLICY "Users can delete their documents" ON documents
       FOR DELETE USING (
-        user_id = auth.uid() OR
-        my_company_id IN (SELECT company_id FROM company_users WHERE user_id = auth.uid())
+        user_id = auth.uid()
       )';
     
     RAISE NOTICE 'Enabled RLS on documents';
@@ -118,63 +181,96 @@ DO $$ BEGIN
 END $$;
 
 -- =====================
--- WORKSPACE TABLES (pages, page_blocks, page_comments, page_permissions)
+-- WORKSPACE TABLES (workspaces, pages, blocks, page_comments, page_permissions, page_versions)
+-- pages links via workspace_id → workspaces.my_company_id
 -- =====================
 
 DO $$ BEGIN
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'workspace_pages') THEN
-    ALTER TABLE workspace_pages ENABLE ROW LEVEL SECURITY;
-    
-    DROP POLICY IF EXISTS "Users can view workspace_pages of their company" ON workspace_pages;
-    EXECUTE 'CREATE POLICY "Users can view workspace_pages of their company" ON workspace_pages
-      FOR SELECT USING (
-        my_company_id IN (SELECT company_id FROM company_users WHERE user_id = auth.uid())
-      )';
-    
-    DROP POLICY IF EXISTS "Users can manage workspace_pages of their company" ON workspace_pages;
-    EXECUTE 'CREATE POLICY "Users can manage workspace_pages of their company" ON workspace_pages
+  -- WORKSPACES
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'workspaces' AND table_schema = 'public') THEN
+    ALTER TABLE workspaces ENABLE ROW LEVEL SECURITY;
+    DROP POLICY IF EXISTS "Users can access workspaces of their company" ON workspaces;
+    EXECUTE 'CREATE POLICY "Users can access workspaces of their company" ON workspaces
       FOR ALL USING (
         my_company_id IN (SELECT company_id FROM company_users WHERE user_id = auth.uid())
       )';
   END IF;
-  
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'page_blocks') THEN
-    ALTER TABLE page_blocks ENABLE ROW LEVEL SECURITY;
-    
-    DROP POLICY IF EXISTS "Users can manage page_blocks via page access" ON page_blocks;
-    EXECUTE 'CREATE POLICY "Users can manage page_blocks via page access" ON page_blocks
+
+  -- PAGES (workspace_id → workspaces.my_company_id)
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'pages' AND table_schema = 'public') THEN
+    ALTER TABLE pages ENABLE ROW LEVEL SECURITY;
+    DROP POLICY IF EXISTS "Users can access pages of their company" ON pages;
+    EXECUTE 'CREATE POLICY "Users can access pages of their company" ON pages
+      FOR ALL USING (
+        workspace_id IN (
+          SELECT id FROM workspaces WHERE my_company_id IN (
+            SELECT company_id FROM company_users WHERE user_id = auth.uid()
+          )
+        )
+        OR created_by = auth.uid()
+        OR is_public = true
+      )';
+  END IF;
+
+  -- BLOCKS (page_id → pages)
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'blocks' AND table_schema = 'public') THEN
+    ALTER TABLE blocks ENABLE ROW LEVEL SECURITY;
+    DROP POLICY IF EXISTS "Users can manage blocks via page access" ON blocks;
+    EXECUTE 'CREATE POLICY "Users can manage blocks via page access" ON blocks
       FOR ALL USING (
         page_id IN (
-          SELECT id FROM workspace_pages WHERE my_company_id IN (
-            SELECT company_id FROM company_users WHERE user_id = auth.uid()
+          SELECT id FROM pages WHERE workspace_id IN (
+            SELECT id FROM workspaces WHERE my_company_id IN (
+              SELECT company_id FROM company_users WHERE user_id = auth.uid()
+            )
           )
         )
       )';
   END IF;
-  
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'page_comments') THEN
+
+  -- PAGE_COMMENTS (page_id → pages)
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'page_comments' AND table_schema = 'public') THEN
     ALTER TABLE page_comments ENABLE ROW LEVEL SECURITY;
-    
     DROP POLICY IF EXISTS "Users can manage page_comments via page access" ON page_comments;
     EXECUTE 'CREATE POLICY "Users can manage page_comments via page access" ON page_comments
       FOR ALL USING (
         page_id IN (
-          SELECT id FROM workspace_pages WHERE my_company_id IN (
-            SELECT company_id FROM company_users WHERE user_id = auth.uid()
+          SELECT id FROM pages WHERE workspace_id IN (
+            SELECT id FROM workspaces WHERE my_company_id IN (
+              SELECT company_id FROM company_users WHERE user_id = auth.uid()
+            )
           )
         )
       )';
   END IF;
-  
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'page_permissions') THEN
+
+  -- PAGE_PERMISSIONS (page_id → pages)
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'page_permissions' AND table_schema = 'public') THEN
     ALTER TABLE page_permissions ENABLE ROW LEVEL SECURITY;
-    
     DROP POLICY IF EXISTS "Users can view page_permissions of their company" ON page_permissions;
     EXECUTE 'CREATE POLICY "Users can view page_permissions of their company" ON page_permissions
       FOR ALL USING (
         page_id IN (
-          SELECT id FROM workspace_pages WHERE my_company_id IN (
-            SELECT company_id FROM company_users WHERE user_id = auth.uid()
+          SELECT id FROM pages WHERE workspace_id IN (
+            SELECT id FROM workspaces WHERE my_company_id IN (
+              SELECT company_id FROM company_users WHERE user_id = auth.uid()
+            )
+          )
+        )
+      )';
+  END IF;
+
+  -- PAGE_VERSIONS (page_id → pages)
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'page_versions' AND table_schema = 'public') THEN
+    ALTER TABLE page_versions ENABLE ROW LEVEL SECURITY;
+    DROP POLICY IF EXISTS "Users can view page_versions of their company" ON page_versions;
+    EXECUTE 'CREATE POLICY "Users can view page_versions of their company" ON page_versions
+      FOR ALL USING (
+        page_id IN (
+          SELECT id FROM pages WHERE workspace_id IN (
+            SELECT id FROM workspaces WHERE my_company_id IN (
+              SELECT company_id FROM company_users WHERE user_id = auth.uid()
+            )
           )
         )
       )';
@@ -183,6 +279,7 @@ END $$;
 
 -- =====================
 -- CALENDAR_EVENTS
+-- (has user_id but no created_by or my_company_id)
 -- =====================
 
 DO $$ BEGIN
@@ -192,15 +289,13 @@ DO $$ BEGIN
     DROP POLICY IF EXISTS "Users can view calendar_events of their company" ON calendar_events;
     EXECUTE 'CREATE POLICY "Users can view calendar_events of their company" ON calendar_events
       FOR SELECT USING (
-        created_by = auth.uid() OR
-        my_company_id IN (SELECT company_id FROM company_users WHERE user_id = auth.uid())
+        user_id = auth.uid()
       )';
     
     DROP POLICY IF EXISTS "Users can manage their calendar_events" ON calendar_events;
     EXECUTE 'CREATE POLICY "Users can manage their calendar_events" ON calendar_events
       FOR ALL USING (
-        created_by = auth.uid() OR
-        my_company_id IN (SELECT company_id FROM company_users WHERE user_id = auth.uid())
+        user_id = auth.uid()
       )';
   END IF;
 END $$;

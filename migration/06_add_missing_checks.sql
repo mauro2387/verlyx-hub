@@ -8,82 +8,85 @@
 -- QUOTES
 -- =====================
 
-ALTER TABLE quotes DROP CONSTRAINT IF EXISTS chk_quotes_discount_percent;
-ALTER TABLE quotes ADD CONSTRAINT chk_quotes_discount_percent 
-  CHECK (discount_percent BETWEEN 0 AND 100);
-
-ALTER TABLE quotes DROP CONSTRAINT IF EXISTS chk_quotes_tax_percent;
-ALTER TABLE quotes ADD CONSTRAINT chk_quotes_tax_percent 
-  CHECK (tax_percent BETWEEN 0 AND 100);
-
-ALTER TABLE quotes DROP CONSTRAINT IF EXISTS chk_quotes_total_positive;
-ALTER TABLE quotes ADD CONSTRAINT chk_quotes_total_positive 
-  CHECK (total >= 0);
-
-ALTER TABLE quotes DROP CONSTRAINT IF EXISTS chk_quotes_subtotal_positive;
-ALTER TABLE quotes ADD CONSTRAINT chk_quotes_subtotal_positive 
-  CHECK (subtotal >= 0);
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'quotes' AND table_schema = 'public') THEN
+    ALTER TABLE quotes DROP CONSTRAINT IF EXISTS chk_quotes_discount_percent;
+    ALTER TABLE quotes ADD CONSTRAINT chk_quotes_discount_percent CHECK (discount_percent BETWEEN 0 AND 100);
+    ALTER TABLE quotes DROP CONSTRAINT IF EXISTS chk_quotes_tax_percent;
+    ALTER TABLE quotes ADD CONSTRAINT chk_quotes_tax_percent CHECK (tax_percent BETWEEN 0 AND 100);
+    ALTER TABLE quotes DROP CONSTRAINT IF EXISTS chk_quotes_total_positive;
+    ALTER TABLE quotes ADD CONSTRAINT chk_quotes_total_positive CHECK (total >= 0);
+    ALTER TABLE quotes DROP CONSTRAINT IF EXISTS chk_quotes_subtotal_positive;
+    ALTER TABLE quotes ADD CONSTRAINT chk_quotes_subtotal_positive CHECK (subtotal >= 0);
+  ELSE
+    RAISE NOTICE 'Skipping quotes checks — table does not exist';
+  END IF;
+END $$;
 
 -- QUOTE_ITEMS
-ALTER TABLE quote_items DROP CONSTRAINT IF EXISTS chk_quote_items_quantity;
-ALTER TABLE quote_items ADD CONSTRAINT chk_quote_items_quantity 
-  CHECK (quantity > 0);
-
-ALTER TABLE quote_items DROP CONSTRAINT IF EXISTS chk_quote_items_unit_price;
-ALTER TABLE quote_items ADD CONSTRAINT chk_quote_items_unit_price 
-  CHECK (unit_price >= 0);
-
-ALTER TABLE quote_items DROP CONSTRAINT IF EXISTS chk_quote_items_discount;
-ALTER TABLE quote_items ADD CONSTRAINT chk_quote_items_discount 
-  CHECK (discount_percent BETWEEN 0 AND 100);
-
-ALTER TABLE quote_items DROP CONSTRAINT IF EXISTS chk_quote_items_tax;
-ALTER TABLE quote_items ADD CONSTRAINT chk_quote_items_tax 
-  CHECK (tax_percent BETWEEN 0 AND 100);
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'quote_items' AND table_schema = 'public') THEN
+    ALTER TABLE quote_items DROP CONSTRAINT IF EXISTS chk_quote_items_quantity;
+    ALTER TABLE quote_items ADD CONSTRAINT chk_quote_items_quantity CHECK (quantity > 0);
+    ALTER TABLE quote_items DROP CONSTRAINT IF EXISTS chk_quote_items_unit_price;
+    ALTER TABLE quote_items ADD CONSTRAINT chk_quote_items_unit_price CHECK (unit_price >= 0);
+    ALTER TABLE quote_items DROP CONSTRAINT IF EXISTS chk_quote_items_discount;
+    ALTER TABLE quote_items ADD CONSTRAINT chk_quote_items_discount CHECK (discount_percent BETWEEN 0 AND 100);
+    ALTER TABLE quote_items DROP CONSTRAINT IF EXISTS chk_quote_items_tax;
+    ALTER TABLE quote_items ADD CONSTRAINT chk_quote_items_tax CHECK (tax_percent BETWEEN 0 AND 100);
+  ELSE
+    RAISE NOTICE 'Skipping quote_items checks — table does not exist';
+  END IF;
+END $$;
 
 -- =====================
 -- TIME_ENTRIES
 -- =====================
 
-ALTER TABLE time_entries DROP CONSTRAINT IF EXISTS chk_time_entries_duration;
-ALTER TABLE time_entries ADD CONSTRAINT chk_time_entries_duration 
-  CHECK (duration_minutes >= 0);
-
-ALTER TABLE time_entries DROP CONSTRAINT IF EXISTS chk_time_entries_hourly_rate;
-ALTER TABLE time_entries ADD CONSTRAINT chk_time_entries_hourly_rate 
-  CHECK (hourly_rate IS NULL OR hourly_rate >= 0);
-
-ALTER TABLE time_entries DROP CONSTRAINT IF EXISTS chk_time_entries_total_amount;
-ALTER TABLE time_entries ADD CONSTRAINT chk_time_entries_total_amount 
-  CHECK (total_amount >= 0);
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'time_entries' AND table_schema = 'public') THEN
+    ALTER TABLE time_entries DROP CONSTRAINT IF EXISTS chk_time_entries_duration;
+    ALTER TABLE time_entries ADD CONSTRAINT chk_time_entries_duration CHECK (duration_minutes >= 0);
+    ALTER TABLE time_entries DROP CONSTRAINT IF EXISTS chk_time_entries_hourly_rate;
+    ALTER TABLE time_entries ADD CONSTRAINT chk_time_entries_hourly_rate CHECK (hourly_rate IS NULL OR hourly_rate >= 0);
+    ALTER TABLE time_entries DROP CONSTRAINT IF EXISTS chk_time_entries_total_amount;
+    ALTER TABLE time_entries ADD CONSTRAINT chk_time_entries_total_amount CHECK (total_amount >= 0);
+  ELSE
+    RAISE NOTICE 'Skipping time_entries checks — table does not exist';
+  END IF;
+END $$;
 
 -- =====================
 -- PRODUCTS
 -- =====================
 
-ALTER TABLE products DROP CONSTRAINT IF EXISTS chk_products_unit_price;
-ALTER TABLE products ADD CONSTRAINT chk_products_unit_price 
-  CHECK (unit_price >= 0);
-
-ALTER TABLE products DROP CONSTRAINT IF EXISTS chk_products_cost_price;
-ALTER TABLE products ADD CONSTRAINT chk_products_cost_price 
-  CHECK (cost_price >= 0);
-
-ALTER TABLE products DROP CONSTRAINT IF EXISTS chk_products_tax_percent;
-ALTER TABLE products ADD CONSTRAINT chk_products_tax_percent 
-  CHECK (tax_percent BETWEEN 0 AND 100);
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'products' AND table_schema = 'public') THEN
+    ALTER TABLE products DROP CONSTRAINT IF EXISTS chk_products_unit_price;
+    ALTER TABLE products ADD CONSTRAINT chk_products_unit_price CHECK (unit_price >= 0);
+    ALTER TABLE products DROP CONSTRAINT IF EXISTS chk_products_cost_price;
+    ALTER TABLE products ADD CONSTRAINT chk_products_cost_price CHECK (cost_price >= 0);
+    ALTER TABLE products DROP CONSTRAINT IF EXISTS chk_products_tax_percent;
+    ALTER TABLE products ADD CONSTRAINT chk_products_tax_percent CHECK (tax_percent BETWEEN 0 AND 100);
+  ELSE
+    RAISE NOTICE 'Skipping products checks — table does not exist';
+  END IF;
+END $$;
 
 -- =====================
 -- GOALS
 -- =====================
 
-ALTER TABLE goals DROP CONSTRAINT IF EXISTS chk_goals_target_value;
-ALTER TABLE goals ADD CONSTRAINT chk_goals_target_value 
-  CHECK (target_value > 0);
-
-ALTER TABLE goals DROP CONSTRAINT IF EXISTS chk_goals_current_value;
-ALTER TABLE goals ADD CONSTRAINT chk_goals_current_value 
-  CHECK (current_value >= 0);
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'goals' AND table_schema = 'public') THEN
+    ALTER TABLE goals DROP CONSTRAINT IF EXISTS chk_goals_target_value;
+    ALTER TABLE goals ADD CONSTRAINT chk_goals_target_value CHECK (target_value > 0);
+    ALTER TABLE goals DROP CONSTRAINT IF EXISTS chk_goals_current_value;
+    ALTER TABLE goals ADD CONSTRAINT chk_goals_current_value CHECK (current_value >= 0);
+  ELSE
+    RAISE NOTICE 'Skipping goals checks — table does not exist';
+  END IF;
+END $$;
 
 -- =====================
 -- BUDGETS

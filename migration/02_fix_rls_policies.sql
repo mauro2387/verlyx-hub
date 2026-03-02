@@ -210,49 +210,33 @@ REVOKE ALL ON generated_pdfs FROM anon;
 ALTER TABLE pdf_templates ENABLE ROW LEVEL SECURITY;
 ALTER TABLE generated_pdfs ENABLE ROW LEVEL SECURITY;
 
--- Create RLS policies for pdf_templates
-CREATE POLICY "Users can view pdf_templates of their company" ON pdf_templates
-  FOR SELECT USING (
-    my_company_id IN (
-      SELECT company_id FROM company_users WHERE user_id = auth.uid()
-    )
-  );
+-- Create RLS policies for pdf_templates (uses user_id, no my_company_id column)
+DROP POLICY IF EXISTS "Users can view pdf_templates of their company" ON pdf_templates;
+DROP POLICY IF EXISTS "Users can create pdf_templates for their company" ON pdf_templates;
+DROP POLICY IF EXISTS "Users can update pdf_templates of their company" ON pdf_templates;
+DROP POLICY IF EXISTS "Users can delete pdf_templates of their company" ON pdf_templates;
 
-CREATE POLICY "Users can create pdf_templates for their company" ON pdf_templates
-  FOR INSERT WITH CHECK (
-    my_company_id IN (
-      SELECT company_id FROM company_users WHERE user_id = auth.uid()
-    )
-  );
+CREATE POLICY "Users can view their own pdf_templates" ON pdf_templates
+  FOR SELECT USING (user_id = auth.uid());
 
-CREATE POLICY "Users can update pdf_templates of their company" ON pdf_templates
-  FOR UPDATE USING (
-    my_company_id IN (
-      SELECT company_id FROM company_users WHERE user_id = auth.uid()
-    )
-  );
+CREATE POLICY "Users can create their own pdf_templates" ON pdf_templates
+  FOR INSERT WITH CHECK (user_id = auth.uid());
 
-CREATE POLICY "Users can delete pdf_templates of their company" ON pdf_templates
-  FOR DELETE USING (
-    my_company_id IN (
-      SELECT company_id FROM company_users WHERE user_id = auth.uid()
-    )
-  );
+CREATE POLICY "Users can update their own pdf_templates" ON pdf_templates
+  FOR UPDATE USING (user_id = auth.uid());
 
--- Create RLS policies for generated_pdfs
-CREATE POLICY "Users can view generated_pdfs of their company" ON generated_pdfs
-  FOR SELECT USING (
-    my_company_id IN (
-      SELECT company_id FROM company_users WHERE user_id = auth.uid()
-    )
-  );
+CREATE POLICY "Users can delete their own pdf_templates" ON pdf_templates
+  FOR DELETE USING (user_id = auth.uid());
 
-CREATE POLICY "Users can create generated_pdfs for their company" ON generated_pdfs
-  FOR INSERT WITH CHECK (
-    my_company_id IN (
-      SELECT company_id FROM company_users WHERE user_id = auth.uid()
-    )
-  );
+-- Create RLS policies for generated_pdfs (uses user_id, no my_company_id column)
+DROP POLICY IF EXISTS "Users can view generated_pdfs of their company" ON generated_pdfs;
+DROP POLICY IF EXISTS "Users can create generated_pdfs for their company" ON generated_pdfs;
+
+CREATE POLICY "Users can view their own generated_pdfs" ON generated_pdfs
+  FOR SELECT USING (user_id = auth.uid());
+
+CREATE POLICY "Users can create their own generated_pdfs" ON generated_pdfs
+  FOR INSERT WITH CHECK (user_id = auth.uid());
 
 -- =====================
 -- VERIFICATION

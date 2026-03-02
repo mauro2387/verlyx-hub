@@ -5,6 +5,51 @@
 -- ============================================
 
 -- =====================
+-- PREREQUISITE: Create audit_action enum if it doesn't exist
+-- (defined in database/08_create_audit_logs.sql but may not have been run)
+-- =====================
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'audit_action') THEN
+    CREATE TYPE audit_action AS ENUM (
+      'CREATE', 'UPDATE', 'DELETE',
+      'LOGIN', 'LOGOUT',
+      'PERMISSION_CHANGE', 'ROLE_CHANGE',
+      'INVITE_SENT', 'INVITE_ACCEPTED',
+      'MEMBER_ADDED', 'MEMBER_REMOVED',
+      'EXPORT', 'IMPORT',
+      'STATUS_CHANGE', 'OTHER'
+    );
+    RAISE NOTICE '✅ Created audit_action enum type';
+  ELSE
+    RAISE NOTICE 'ℹ️  audit_action enum already exists';
+  END IF;
+END $$;
+
+-- =====================
+-- PREREQUISITE: Create audit_logs table if it doesn't exist
+-- =====================
+CREATE TABLE IF NOT EXISTS audit_logs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  company_id UUID REFERENCES my_companies(id) ON DELETE CASCADE,
+  user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+  entity_type VARCHAR(100),
+  entity_id UUID,
+  action audit_action NOT NULL,
+  changes JSONB,
+  metadata JSONB DEFAULT '{}',
+  ip_address INET,
+  user_agent TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_logs_company_id ON audit_logs(company_id);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_user_id ON audit_logs(user_id);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_entity ON audit_logs(entity_type, entity_id);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_action ON audit_logs(action);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at DESC);
+
+-- =====================
 -- FIX 1: log_page_changes()
 -- Bug: TG_OP returns 'INSERT'/'UPDATE'/'DELETE' but audit_action enum expects 'CREATE'/'UPDATE'/'DELETE'
 -- Bug: company_id set from workspace_id (wrong FK)
