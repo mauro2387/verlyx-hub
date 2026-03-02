@@ -1,0 +1,1029 @@
+'use client';
+
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
+import dynamic from 'next/dynamic';
+import { MainLayout, PageHeader } from '@/components/layout';
+import { Button, Card, CardContent, Loading, Modal, Input, Textarea, Select, Badge, SearchInput, StatCard } from '@/components/ui';
+import { useLeadsStore, useCompanyStore } from '@/lib/store';
+import { Lead, LeadStatus, LeadSource, ContactChannel } from '@/lib/types';
+import { BUSINESS_PRESETS, type ProspectMarker, type GeoPoint } from '@/lib/map-service';
+import { formatDate, cn } from '@/lib/utils';
+
+// Dynamic import — Leaflet doesn't support SSR
+const ProspectingMap = dynamic(() => import('./ProspectingMap'), {
+  ssr: false,
+  loading: () => (
+    <div className="w-full h-full flex items-center justify-center bg-gray-50 rounded-xl">
+      <Loading />
+    </div>
+  ),
+});
+
+// ==========================================
+// CONSTANTS
+// ==========================================
+
+const LEAD_STATUS_LABELS: Record<LeadStatus, { label: string; color: string; bg: string }> = {
+  not_contacted: { label: 'Sin contactar', color: 'text-gray-700', bg: 'bg-gray-100' },
+  contacted: { label: 'Contactado', color: 'text-blue-700', bg: 'bg-blue-100' },
+  waiting_response: { label: 'Esperando respuesta', color: 'text-yellow-700', bg: 'bg-yellow-100' },
+  responded: { label: 'Respondió', color: 'text-green-700', bg: 'bg-green-100' },
+  not_interested: { label: 'No interesado', color: 'text-red-700', bg: 'bg-red-100' },
+};
+
+const LEAD_SOURCE_LABELS: Record<LeadSource, string> = {
+  map: 'Mapa',
+  manual: 'Manual',
+  referral: 'Referido',
+  social: 'Redes sociales',
+  website: 'Sitio web',
+  campaign: 'Campaña',
+  other: 'Otro',
+};
+
+const CHANNEL_OPTIONS: { value: ContactChannel; label: string }[] = [
+  { value: 'email', label: 'Email' },
+  { value: 'whatsapp', label: 'WhatsApp' },
+  { value: 'call', label: 'Llamada' },
+  { value: 'in_person', label: 'Presencial' },
+  { value: 'instagram', label: 'Instagram' },
+  { value: 'linkedin', label: 'LinkedIn' },
+  { value: 'facebook', label: 'Facebook' },
+  { value: 'other', label: 'Otro' },
+];
+
+type ViewMode = 'map' | 'list';
+
+interface LeadFormData {
+  companyName: string;
+  businessType: string;
+  address: string;
+  contactName: string;
+  contactEmail: string;
+  contactPhone: string;
+  website: string;
+  source: LeadSource;
+  channel: ContactChannel | '';
+  notes: string;
+  prospectScore: number;
+}
+
+const emptyForm: LeadFormData = {
+  companyName: '',
+  businessType: '',
+  address: '',
+  contactName: '',
+  contactEmail: '',
+  contactPhone: '',
+  website: '',
+  source: 'manual',
+  channel: '',
+  notes: '',
+  prospectScore: 50,
+};
+
+// ==========================================
+// MAIN PAGE
+// ==========================================
+
+export default function ProspectingPage() {
+  const {
+    leads, isLoading, fetchLeads, createLead, updateLead, deleteLead,
+    setSelectedLead, selectedLead, convertToOpportunity,
+  } = useLeadsStore();
+  const { selectedCompanyId } = useCompanyStore();
+
+  const [viewMode, setViewMode] = useState<ViewMode>('map');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterStatus, setFilterStatus] = useState<string>('');
+  const [filterSource, setFilterSource] = useState<string>('');
+
+  // Map state
+  const [mapCenter, setMapCenter] = useState<GeoPoint>({ lat: -34.9011, lng: -56.1645 }); // Montevideo
+  const [mapZoom, setMapZoom] = useState(13);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedPreset, setSelectedPreset] = useState('');
+  const [searchRadius, setSearchRadius] = useState(2); // km
+  const [prospectResults, setProspectResults] = useState<ProspectMarker[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [selectedProspect, setSelectedProspect] = useState<ProspectMarker | null>(null);
+
+  // Modal state
+  const [isLeadModalOpen, setIsLeadModalOpen] = useState(false);
+  const [editingLead, setEditingLead] = useState<Lead | null>(null);
+  const [formData, setFormData] = useState<LeadFormData>(emptyForm);
+  const [isConverting, setIsConverting] = useState(false);
+
+  // Detail panel
+  const [detailLead, setDetailLead] = useState<Lead | null>(null);
+
+  useEffect(() => {
+    if (selectedCompanyId) fetchLeads();
+  }, [selectedCompanyId, fetchLeads]);
+
+  // Try to get user location on mount
+  useEffect(() => {
+    if (typeof navigator !== 'undefined' && navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          setMapCenter({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+        },
+        () => {/* keep default Montevideo */},
+        { enableHighAccuracy: false, timeout: 5000 }
+      );
+    }
+  }, []);
+
+  // ==========================================
+  // SEARCH (via server proxy)
+  // ==========================================
+
+  const handleSearch = useCallback(async () => {
+    setIsSearching(true);
+    try {
+      // Use the server-side proxy to avoid CORS
+      const body: Record<string, unknown> = {
+        action: 'search',
+        center: mapCenter,
+        radiusKm: searchRadius,
+      };
+
+      if (selectedPreset && BUSINESS_PRESETS[selectedPreset]) {
+        body.tags = BUSINESS_PRESETS[selectedPreset].tags;
+      } else if (searchQuery.trim()) {
+        // Use AI-powered search
+        body.action = 'ai-search';
+        body.query = searchQuery.trim();
+      } else {
+        // Default: search all businesses
+        body.tags = { shop: '*' };
+      }
+
+      const res = await fetch('/api/map/search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+
+      if (!res.ok) throw new Error('Search failed');
+
+      const data = await res.json();
+      setProspectResults(data.results || []);
+    } catch (err) {
+      console.error('Search error:', err);
+      setProspectResults([]);
+    } finally {
+      setIsSearching(false);
+    }
+  }, [mapCenter, searchRadius, selectedPreset, searchQuery]);
+
+  // Geocode a location search
+  const handleLocationSearch = useCallback(async (query: string) => {
+    if (!query.trim()) return;
+    try {
+      const res = await fetch('/api/map/search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'geocode', query }),
+      });
+      const data = await res.json();
+      if (data.results?.length > 0) {
+        const r = data.results[0];
+        setMapCenter({ lat: parseFloat(r.lat), lng: parseFloat(r.lon) });
+        setMapZoom(15);
+      }
+    } catch {/* ignore */}
+  }, []);
+
+  // ==========================================
+  // LEAD CRUD
+  // ==========================================
+
+  const handleSaveFromProspect = useCallback(async (prospect: ProspectMarker) => {
+    const newLead = await createLead({
+      companyName: prospect.name,
+      businessType: prospect.businessType,
+      address: prospect.address,
+      lat: prospect.lat,
+      lng: prospect.lng,
+      contactPhone: prospect.phone,
+      contactEmail: prospect.email,
+      website: prospect.website,
+      source: 'map' as LeadSource,
+      status: 'not_contacted' as LeadStatus,
+      osmId: prospect.osmId,
+      osmTags: prospect.tags,
+    });
+    if (newLead) {
+      setSelectedProspect(null);
+    }
+  }, [createLead]);
+
+  const openCreateModal = useCallback((overrides?: Partial<LeadFormData>) => {
+    setEditingLead(null);
+    setFormData({ ...emptyForm, ...overrides });
+    setIsLeadModalOpen(true);
+  }, []);
+
+  const openEditModal = useCallback((lead: Lead) => {
+    setEditingLead(lead);
+    setFormData({
+      companyName: lead.companyName || '',
+      businessType: lead.businessType || '',
+      address: lead.address || '',
+      contactName: lead.contactName || '',
+      contactEmail: lead.contactEmail || '',
+      contactPhone: lead.contactPhone || '',
+      website: lead.website || '',
+      source: lead.source,
+      channel: lead.channel || '',
+      notes: lead.notes || '',
+      prospectScore: lead.prospectScore || 50,
+    });
+    setIsLeadModalOpen(true);
+  }, []);
+
+  const handleSubmitLead = useCallback(async () => {
+    if (!formData.companyName.trim()) return;
+
+    if (editingLead) {
+      await updateLead(editingLead.id, {
+        companyName: formData.companyName,
+        businessType: formData.businessType || undefined,
+        address: formData.address || undefined,
+        contactName: formData.contactName || undefined,
+        contactEmail: formData.contactEmail || undefined,
+        contactPhone: formData.contactPhone || undefined,
+        website: formData.website || undefined,
+        source: formData.source,
+        channel: formData.channel || undefined,
+        notes: formData.notes || undefined,
+        prospectScore: formData.prospectScore,
+      });
+    } else {
+      await createLead({
+        companyName: formData.companyName,
+        businessType: formData.businessType || undefined,
+        address: formData.address || undefined,
+        contactName: formData.contactName || undefined,
+        contactEmail: formData.contactEmail || undefined,
+        contactPhone: formData.contactPhone || undefined,
+        website: formData.website || undefined,
+        source: formData.source,
+        channel: (formData.channel || undefined) as ContactChannel | undefined,
+        notes: formData.notes || undefined,
+        prospectScore: formData.prospectScore,
+        status: 'not_contacted',
+      });
+    }
+
+    setIsLeadModalOpen(false);
+    setEditingLead(null);
+    setFormData(emptyForm);
+  }, [formData, editingLead, createLead, updateLead]);
+
+  const handleConvert = useCallback(async (leadId: string) => {
+    setIsConverting(true);
+    const oppId = await convertToOpportunity(leadId);
+    setIsConverting(false);
+    if (oppId) {
+      setDetailLead(null);
+    }
+  }, [convertToOpportunity]);
+
+  // ==========================================
+  // FILTERED DATA
+  // ==========================================
+
+  const filteredLeads = useMemo(() => {
+    return leads.filter(l => {
+      if (filterStatus && l.status !== filterStatus) return false;
+      if (filterSource && l.source !== filterSource) return false;
+      if (searchTerm) {
+        const q = searchTerm.toLowerCase();
+        return (
+          l.companyName?.toLowerCase().includes(q) ||
+          l.contactName?.toLowerCase().includes(q) ||
+          l.businessType?.toLowerCase().includes(q) ||
+          l.address?.toLowerCase().includes(q)
+        );
+      }
+      return true;
+    });
+  }, [leads, filterStatus, filterSource, searchTerm]);
+
+  const leadsWithCoords = useMemo(
+    () => leads.filter(l => l.lat != null && l.lng != null),
+    [leads]
+  );
+
+  const stats = useMemo(() => {
+    const total = leads.length;
+    const byStatus: Record<string, number> = {};
+    leads.forEach(l => { byStatus[l.status] = (byStatus[l.status] || 0) + 1; });
+    const avgScore = total > 0 ? Math.round(leads.reduce((a, l) => a + l.prospectScore, 0) / total) : 0;
+    return { total, byStatus, avgScore };
+  }, [leads]);
+
+  // ==========================================
+  // RENDER
+  // ==========================================
+
+  return (
+    <MainLayout>
+      <div className="flex flex-col h-full">
+        {/* Header */}
+        <div className="flex-shrink-0 px-6 pt-6 pb-4">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">Prospección</h1>
+              <p className="text-sm text-gray-500 mt-1">Encuentra y gestiona leads desde el mapa</p>
+            </div>
+            <div className="flex items-center gap-3">
+              {/* View toggle */}
+              <div className="flex bg-gray-100 rounded-lg p-1">
+                <button
+                  onClick={() => setViewMode('map')}
+                  className={cn(
+                    'px-3 py-1.5 text-sm font-medium rounded-md transition-colors',
+                    viewMode === 'map' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                  )}
+                >
+                  <span className="flex items-center gap-1.5">
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
+                    </svg>
+                    Mapa
+                  </span>
+                </button>
+                <button
+                  onClick={() => setViewMode('list')}
+                  className={cn(
+                    'px-3 py-1.5 text-sm font-medium rounded-md transition-colors',
+                    viewMode === 'list' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                  )}
+                >
+                  <span className="flex items-center gap-1.5">
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+                    </svg>
+                    Lista
+                  </span>
+                </button>
+              </div>
+              <Button onClick={() => openCreateModal()}>+ Nuevo Lead</Button>
+            </div>
+          </div>
+
+          {/* Stats strip */}
+          <div className="grid grid-cols-5 gap-3">
+            <div className="bg-white border rounded-lg px-3 py-2">
+              <div className="text-xs text-gray-500">Total Leads</div>
+              <div className="text-lg font-bold text-gray-900">{stats.total}</div>
+            </div>
+            <div className="bg-white border rounded-lg px-3 py-2">
+              <div className="text-xs text-gray-500">Sin contactar</div>
+              <div className="text-lg font-bold text-gray-600">{stats.byStatus['not_contacted'] || 0}</div>
+            </div>
+            <div className="bg-white border rounded-lg px-3 py-2">
+              <div className="text-xs text-gray-500">Contactados</div>
+              <div className="text-lg font-bold text-blue-600">{stats.byStatus['contacted'] || 0}</div>
+            </div>
+            <div className="bg-white border rounded-lg px-3 py-2">
+              <div className="text-xs text-gray-500">Respondieron</div>
+              <div className="text-lg font-bold text-green-600">{stats.byStatus['responded'] || 0}</div>
+            </div>
+            <div className="bg-white border rounded-lg px-3 py-2">
+              <div className="text-xs text-gray-500">Score promedio</div>
+              <div className="text-lg font-bold text-purple-600">{stats.avgScore}</div>
+            </div>
+          </div>
+        </div>
+
+        {/* Main content */}
+        <div className="flex-1 px-6 pb-6 min-h-0">
+          {viewMode === 'map' ? (
+            <div className="flex gap-4 h-full">
+              {/* Left panel — search & results */}
+              <div className="w-80 flex-shrink-0 flex flex-col gap-3 overflow-y-auto">
+                {/* Location search */}
+                <Card>
+                  <CardContent className="p-3 space-y-3">
+                    <div className="text-sm font-medium text-gray-700">Ubicación</div>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        placeholder="Buscar ciudad, dirección..."
+                        className="flex-1 text-sm border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') handleLocationSearch((e.target as HTMLInputElement).value);
+                        }}
+                      />
+                      <button
+                        onClick={() => {
+                          if (navigator.geolocation) {
+                            navigator.geolocation.getCurrentPosition(
+                              (pos) => { setMapCenter({ lat: pos.coords.latitude, lng: pos.coords.longitude }); setMapZoom(15); },
+                              () => {}
+                            );
+                          }
+                        }}
+                        className="p-2 text-gray-500 hover:text-blue-600 border rounded-lg hover:border-blue-300 transition-colors"
+                        title="Mi ubicación"
+                      >
+                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                        </svg>
+                      </button>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Business search */}
+                <Card>
+                  <CardContent className="p-3 space-y-3">
+                    <div className="text-sm font-medium text-gray-700">Buscar negocios</div>
+                    <select
+                      value={selectedPreset}
+                      onChange={(e) => setSelectedPreset(e.target.value)}
+                      className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="">Tipo de negocio...</option>
+                      {Object.entries(BUSINESS_PRESETS).map(([key, { label }]) => (
+                        <option key={key} value={key}>{label}</option>
+                      ))}
+                    </select>
+
+                    <div className="text-xs text-gray-500">O búsqueda libre:</div>
+                    <input
+                      type="text"
+                      placeholder='Ej: "veterinarias cerca del centro"'
+                      value={searchQuery}
+                      onChange={(e) => { setSearchQuery(e.target.value); setSelectedPreset(''); }}
+                      className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
+                    />
+
+                    <div>
+                      <label className="text-xs text-gray-500">Radio: {searchRadius} km</label>
+                      <input
+                        type="range"
+                        min={0.5}
+                        max={10}
+                        step={0.5}
+                        value={searchRadius}
+                        onChange={(e) => setSearchRadius(parseFloat(e.target.value))}
+                        className="w-full accent-blue-600"
+                      />
+                    </div>
+
+                    <Button
+                      onClick={handleSearch}
+                      disabled={isSearching}
+                      className="w-full"
+                    >
+                      {isSearching ? (
+                        <span className="flex items-center gap-2">
+                          <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                          </svg>
+                          Buscando...
+                        </span>
+                      ) : (
+                        <span className="flex items-center gap-2">
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                          </svg>
+                          Buscar en zona
+                        </span>
+                      )}
+                    </Button>
+                  </CardContent>
+                </Card>
+
+                {/* Search results */}
+                {prospectResults.length > 0 && (
+                  <Card>
+                    <CardContent className="p-3">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-sm font-medium text-gray-700">
+                          Resultados ({prospectResults.length})
+                        </span>
+                        <button
+                          onClick={() => setProspectResults([])}
+                          className="text-xs text-gray-400 hover:text-gray-600"
+                        >
+                          Limpiar
+                        </button>
+                      </div>
+                      <div className="space-y-2 max-h-[300px] overflow-y-auto">
+                        {prospectResults.map((p) => {
+                          const alreadySaved = leads.some(l => l.osmId === p.osmId);
+                          return (
+                            <div
+                              key={p.id}
+                              onClick={() => setSelectedProspect(p)}
+                              className={cn(
+                                'p-2 rounded-lg border cursor-pointer transition-colors text-sm',
+                                selectedProspect?.id === p.id
+                                  ? 'border-blue-400 bg-blue-50'
+                                  : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                              )}
+                            >
+                              <div className="font-medium text-gray-900 truncate">{p.name}</div>
+                              <div className="text-xs text-gray-500 truncate">{p.businessType}</div>
+                              {p.address && (
+                                <div className="text-xs text-gray-400 truncate mt-0.5">{p.address}</div>
+                              )}
+                              <div className="flex items-center justify-between mt-1.5">
+                                {p.distance != null && (
+                                  <span className="text-xs text-gray-400">{p.distance.toFixed(1)} km</span>
+                                )}
+                                {alreadySaved ? (
+                                  <span className="text-xs text-green-600 font-medium">✓ Guardado</span>
+                                ) : (
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); handleSaveFromProspect(p); }}
+                                    className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+                                  >
+                                    + Guardar lead
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Existing leads on map */}
+                {leadsWithCoords.length > 0 && (
+                  <Card>
+                    <CardContent className="p-3">
+                      <div className="text-sm font-medium text-gray-700 mb-2">
+                        Mis leads ({leadsWithCoords.length})
+                      </div>
+                      <div className="space-y-1.5 max-h-[200px] overflow-y-auto">
+                        {leadsWithCoords.map((l) => (
+                          <div
+                            key={l.id}
+                            onClick={() => setDetailLead(l)}
+                            className="flex items-center gap-2 p-1.5 rounded cursor-pointer hover:bg-gray-50 text-sm"
+                          >
+                            <span className={cn(
+                              'w-2 h-2 rounded-full flex-shrink-0',
+                              l.status === 'not_contacted' && 'bg-gray-400',
+                              l.status === 'contacted' && 'bg-blue-400',
+                              l.status === 'waiting_response' && 'bg-yellow-400',
+                              l.status === 'responded' && 'bg-green-400',
+                              l.status === 'not_interested' && 'bg-red-400',
+                            )} />
+                            <span className="truncate text-gray-700">{l.companyName}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+              </div>
+
+              {/* Map */}
+              <div className="flex-1 rounded-xl overflow-hidden border border-gray-200 shadow-sm relative">
+                <ProspectingMap
+                  center={mapCenter}
+                  zoom={mapZoom}
+                  prospects={prospectResults}
+                  leads={leadsWithCoords}
+                  selectedProspect={selectedProspect}
+                  onSelectProspect={setSelectedProspect}
+                  onSelectLead={setDetailLead}
+                  onMapMove={(center) => setMapCenter(center)}
+                  onSaveProspect={handleSaveFromProspect}
+                  searchRadius={searchRadius}
+                />
+              </div>
+
+              {/* Right panel — lead detail */}
+              {detailLead && (
+                <div className="w-80 flex-shrink-0 overflow-y-auto">
+                  <Card>
+                    <CardContent className="p-4 space-y-4">
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <h3 className="font-semibold text-gray-900">{detailLead.companyName}</h3>
+                          {detailLead.businessType && (
+                            <p className="text-xs text-gray-500 mt-0.5">{detailLead.businessType}</p>
+                          )}
+                        </div>
+                        <button
+                          onClick={() => setDetailLead(null)}
+                          className="text-gray-400 hover:text-gray-600"
+                        >
+                          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
+                      </div>
+
+                      <div className={cn('inline-flex items-center px-2 py-1 rounded-full text-xs font-medium',
+                        LEAD_STATUS_LABELS[detailLead.status].bg,
+                        LEAD_STATUS_LABELS[detailLead.status].color,
+                      )}>
+                        {LEAD_STATUS_LABELS[detailLead.status].label}
+                      </div>
+
+                      {/* Score */}
+                      <div>
+                        <div className="text-xs text-gray-500 mb-1">Score de prospección</div>
+                        <div className="flex items-center gap-2">
+                          <div className="flex-1 bg-gray-200 rounded-full h-2">
+                            <div
+                              className={cn('h-2 rounded-full',
+                                detailLead.prospectScore < 30 && 'bg-red-500',
+                                detailLead.prospectScore >= 30 && detailLead.prospectScore < 60 && 'bg-yellow-500',
+                                detailLead.prospectScore >= 60 && 'bg-green-500',
+                              )}
+                              style={{ width: `${detailLead.prospectScore}%` }}
+                            />
+                          </div>
+                          <span className="text-sm font-medium">{detailLead.prospectScore}</span>
+                        </div>
+                      </div>
+
+                      {/* Contact info */}
+                      <div className="space-y-2">
+                        <div className="text-xs font-medium text-gray-500 uppercase tracking-wider">Contacto</div>
+                        {detailLead.contactName && (
+                          <div className="flex items-center gap-2 text-sm">
+                            <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                            </svg>
+                            {detailLead.contactName}
+                          </div>
+                        )}
+                        {detailLead.contactEmail && (
+                          <a href={`mailto:${detailLead.contactEmail}`} className="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-800">
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                            </svg>
+                            {detailLead.contactEmail}
+                          </a>
+                        )}
+                        {detailLead.contactPhone && (
+                          <div className="flex items-center gap-2 text-sm">
+                            <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                            </svg>
+                            {detailLead.contactPhone}
+                            <a
+                              href={`https://wa.me/${detailLead.contactPhone.replace(/[^\d+]/g, '').replace(/^\+/, '')}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-green-600 hover:text-green-700 ml-1"
+                              title="Abrir WhatsApp"
+                            >
+                              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z" />
+                                <path d="M12 0C5.373 0 0 5.373 0 12c0 2.625.846 5.059 2.284 7.034L.789 23.492a.5.5 0 00.612.638l4.685-1.323A11.955 11.955 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 22c-2.24 0-4.326-.658-6.085-1.79l-.427-.271-2.796.79.73-2.882-.28-.44A9.96 9.96 0 012 12C2 6.486 6.486 2 12 2s10 4.486 10 10-4.486 10-10 10z" />
+                              </svg>
+                            </a>
+                          </div>
+                        )}
+                        {detailLead.website && (
+                          <a href={detailLead.website.startsWith('http') ? detailLead.website : `https://${detailLead.website}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-800">
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
+                            </svg>
+                            {detailLead.website}
+                          </a>
+                        )}
+                        {detailLead.address && (
+                          <div className="flex items-start gap-2 text-sm text-gray-600">
+                            <svg className="w-4 h-4 text-gray-400 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                            </svg>
+                            {detailLead.address}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Notes */}
+                      {detailLead.notes && (
+                        <div>
+                          <div className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">Notas</div>
+                          <p className="text-sm text-gray-600">{detailLead.notes}</p>
+                        </div>
+                      )}
+
+                      {/* Meta */}
+                      <div className="text-xs text-gray-400 space-y-1">
+                        <div>Fuente: {LEAD_SOURCE_LABELS[detailLead.source]}</div>
+                        <div>Intentos de contacto: {detailLead.contactAttempts}</div>
+                        <div>Creado: {formatDate(detailLead.createdAt)}</div>
+                      </div>
+
+                      {/* Actions */}
+                      <div className="space-y-2 pt-2 border-t">
+                        <div className="grid grid-cols-2 gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => openEditModal(detailLead)}
+                          >
+                            Editar
+                          </Button>
+                          <select
+                            value={detailLead.status}
+                            onChange={(e) => {
+                              updateLead(detailLead.id, { status: e.target.value as LeadStatus });
+                              setDetailLead({ ...detailLead, status: e.target.value as LeadStatus });
+                            }}
+                            className="text-xs border border-gray-300 rounded-lg px-2 py-1.5 focus:ring-2 focus:ring-blue-500"
+                          >
+                            {Object.entries(LEAD_STATUS_LABELS).map(([k, v]) => (
+                              <option key={k} value={k}>{v.label}</option>
+                            ))}
+                          </select>
+                        </div>
+                        {!detailLead.convertedToOpportunityId && detailLead.status === 'responded' && (
+                          <Button
+                            onClick={() => handleConvert(detailLead.id)}
+                            disabled={isConverting}
+                            className="w-full bg-green-600 hover:bg-green-700"
+                          >
+                            {isConverting ? 'Convirtiendo...' : '→ Convertir a Oportunidad'}
+                          </Button>
+                        )}
+                        {detailLead.convertedToOpportunityId && (
+                          <div className="text-xs text-green-600 font-medium text-center py-1">
+                            ✓ Convertido a oportunidad
+                          </div>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+              )}
+            </div>
+          ) : (
+            /* LIST VIEW */
+            <div className="space-y-4">
+              {/* Filters */}
+              <div className="flex items-center gap-3">
+                <div className="flex-1">
+                  <SearchInput
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    placeholder="Buscar leads..."
+                  />
+                </div>
+                <select
+                  value={filterStatus}
+                  onChange={(e) => setFilterStatus(e.target.value)}
+                  className="text-sm border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">Todos los estados</option>
+                  {Object.entries(LEAD_STATUS_LABELS).map(([k, v]) => (
+                    <option key={k} value={k}>{v.label}</option>
+                  ))}
+                </select>
+                <select
+                  value={filterSource}
+                  onChange={(e) => setFilterSource(e.target.value)}
+                  className="text-sm border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">Todas las fuentes</option>
+                  {Object.entries(LEAD_SOURCE_LABELS).map(([k, v]) => (
+                    <option key={k} value={k}>{v}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Table */}
+              {isLoading ? (
+                <Loading />
+              ) : filteredLeads.length === 0 ? (
+                <div className="text-center py-12 text-gray-500">
+                  <svg className="w-12 h-12 mx-auto text-gray-300 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
+                  <p>No hay leads. Usa el mapa para prospectar o crea uno manualmente.</p>
+                </div>
+              ) : (
+                <div className="bg-white border rounded-xl overflow-hidden">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="bg-gray-50 border-b text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        <th className="text-left px-4 py-3">Empresa</th>
+                        <th className="text-left px-4 py-3">Contacto</th>
+                        <th className="text-left px-4 py-3">Estado</th>
+                        <th className="text-left px-4 py-3">Fuente</th>
+                        <th className="text-center px-4 py-3">Score</th>
+                        <th className="text-left px-4 py-3">Fecha</th>
+                        <th className="text-right px-4 py-3">Acciones</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y">
+                      {filteredLeads.map((lead) => (
+                        <tr key={lead.id} className="hover:bg-gray-50 transition-colors">
+                          <td className="px-4 py-3">
+                            <div className="font-medium text-gray-900 text-sm">{lead.companyName}</div>
+                            {lead.businessType && (
+                              <div className="text-xs text-gray-500">{lead.businessType}</div>
+                            )}
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="text-sm text-gray-700">{lead.contactName || '—'}</div>
+                            <div className="text-xs text-gray-500">{lead.contactEmail || lead.contactPhone || ''}</div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className={cn(
+                              'inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium',
+                              LEAD_STATUS_LABELS[lead.status].bg,
+                              LEAD_STATUS_LABELS[lead.status].color,
+                            )}>
+                              {LEAD_STATUS_LABELS[lead.status].label}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className="text-xs text-gray-600">{LEAD_SOURCE_LABELS[lead.source]}</span>
+                          </td>
+                          <td className="px-4 py-3 text-center">
+                            <span className={cn('text-sm font-medium',
+                              lead.prospectScore < 30 && 'text-red-600',
+                              lead.prospectScore >= 30 && lead.prospectScore < 60 && 'text-yellow-600',
+                              lead.prospectScore >= 60 && 'text-green-600',
+                            )}>
+                              {lead.prospectScore}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-xs text-gray-500">
+                            {formatDate(lead.createdAt)}
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            <div className="flex items-center justify-end gap-1">
+                              <button
+                                onClick={() => openEditModal(lead)}
+                                className="p-1 text-gray-400 hover:text-blue-600 rounded"
+                                title="Editar"
+                              >
+                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                </svg>
+                              </button>
+                              <button
+                                onClick={() => { if (confirm('¿Eliminar este lead?')) deleteLead(lead.id); }}
+                                className="p-1 text-gray-400 hover:text-red-600 rounded"
+                                title="Eliminar"
+                              >
+                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                </svg>
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Lead Form Modal */}
+      <Modal
+        isOpen={isLeadModalOpen}
+        onClose={() => { setIsLeadModalOpen(false); setEditingLead(null); }}
+        title={editingLead ? 'Editar Lead' : 'Nuevo Lead'}
+        size="lg"
+      >
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <Input
+              label="Nombre de empresa *"
+              value={formData.companyName}
+              onChange={(e) => setFormData(f => ({ ...f, companyName: e.target.value }))}
+              placeholder="Nombre del negocio"
+            />
+            <Input
+              label="Tipo de negocio"
+              value={formData.businessType}
+              onChange={(e) => setFormData(f => ({ ...f, businessType: e.target.value }))}
+              placeholder="Ej: Restaurante, Tienda..."
+            />
+          </div>
+
+          <Input
+            label="Dirección"
+            value={formData.address}
+            onChange={(e) => setFormData(f => ({ ...f, address: e.target.value }))}
+            placeholder="Dirección del negocio"
+          />
+
+          <div className="grid grid-cols-2 gap-4">
+            <Input
+              label="Nombre de contacto"
+              value={formData.contactName}
+              onChange={(e) => setFormData(f => ({ ...f, contactName: e.target.value }))}
+              placeholder="Nombre y apellido"
+            />
+            <Input
+              label="Email de contacto"
+              type="email"
+              value={formData.contactEmail}
+              onChange={(e) => setFormData(f => ({ ...f, contactEmail: e.target.value }))}
+              placeholder="email@ejemplo.com"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <Input
+              label="Teléfono"
+              value={formData.contactPhone}
+              onChange={(e) => setFormData(f => ({ ...f, contactPhone: e.target.value }))}
+              placeholder="+598 99 123 456"
+            />
+            <Input
+              label="Sitio web"
+              value={formData.website}
+              onChange={(e) => setFormData(f => ({ ...f, website: e.target.value }))}
+              placeholder="https://..."
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Fuente</label>
+              <select
+                value={formData.source}
+                onChange={(e) => setFormData(f => ({ ...f, source: e.target.value as LeadSource }))}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
+              >
+                {Object.entries(LEAD_SOURCE_LABELS).map(([k, v]) => (
+                  <option key={k} value={k}>{v}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Canal preferido</label>
+              <select
+                value={formData.channel}
+                onChange={(e) => setFormData(f => ({ ...f, channel: e.target.value as ContactChannel }))}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">Sin especificar</option>
+                {CHANNEL_OPTIONS.map(c => (
+                  <option key={c.value} value={c.value}>{c.label}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Score de prospección: {formData.prospectScore}
+            </label>
+            <input
+              type="range"
+              min={0}
+              max={100}
+              value={formData.prospectScore}
+              onChange={(e) => setFormData(f => ({ ...f, prospectScore: parseInt(e.target.value) }))}
+              className="w-full accent-blue-600"
+            />
+            <div className="flex justify-between text-xs text-gray-400">
+              <span>Frío</span>
+              <span>Tibio</span>
+              <span>Caliente</span>
+            </div>
+          </div>
+
+          <Textarea
+            label="Notas"
+            value={formData.notes}
+            onChange={(e) => setFormData(f => ({ ...f, notes: e.target.value }))}
+            placeholder="Notas sobre este lead..."
+            rows={3}
+          />
+
+          <div className="flex justify-end gap-3 pt-2">
+            <Button variant="outline" onClick={() => { setIsLeadModalOpen(false); setEditingLead(null); }}>
+              Cancelar
+            </Button>
+            <Button onClick={handleSubmitLead} disabled={!formData.companyName.trim()}>
+              {editingLead ? 'Guardar cambios' : 'Crear lead'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+    </MainLayout>
+  );
+}
