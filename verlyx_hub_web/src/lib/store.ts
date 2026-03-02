@@ -22,9 +22,6 @@ import {
   Opportunity,
   OpportunityStage,
 } from './types';
-import {
-  mockDocuments,
-} from './mock-data';
 import { auth, db, supabase } from './supabase';
 import { onDealStageChanged } from './pipeline';
 import { toast } from '@/components/ui/Toast';
@@ -62,19 +59,6 @@ export const useAuthStore = create<AuthState>()(
             name: profile.data?.full_name || email.split('@')[0],
             fullName: profile.data?.full_name || email.split('@')[0],
             role: profile.data?.role || 'admin',
-          };
-          set({ user, isAuthenticated: true, isLoading: false });
-          return true;
-        }
-        
-        // Fallback to demo mode if Supabase fails
-        if (email && password) {
-          const user: User = {
-            id: 'demo-1',
-            email,
-            name: 'Usuario Demo',
-            fullName: 'Usuario Demo',
-            role: 'admin',
           };
           set({ user, isAuthenticated: true, isLoading: false });
           return true;

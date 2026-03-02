@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { useAuthStore } from '@/lib/store';
 import { Button, Input } from '@/components/ui';
 
@@ -87,18 +88,13 @@ export default function LoginPage() {
           <div className="mt-6 pt-6 border-t border-gray-100">
             <p className="text-sm text-gray-500 text-center">
               ¿No tienes cuenta?{' '}
-              <a href="#" className="text-indigo-600 hover:text-indigo-700 font-medium">
+              <Link href="/register" className="text-indigo-600 hover:text-indigo-700 font-medium">
                 Regístrate
-              </a>
+              </Link>
             </p>
           </div>
 
-          {/* Demo hint */}
-          <div className="mt-4 p-3 bg-indigo-50 rounded-lg">
-            <p className="text-xs text-indigo-600 text-center">
-              <strong>Demo:</strong> Ingresa cualquier email y contraseña para acceder
-            </p>
-          </div>
+
         </div>
       </div>
     </div>

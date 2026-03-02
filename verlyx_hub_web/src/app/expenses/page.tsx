@@ -156,8 +156,13 @@ export default function ExpensesPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
+    if (!selectedCompanyId) {
+      alert('Selecciona una empresa activa primero');
+      return;
+    }
+
     const expenseData = {
-      myCompanyId: selectedCompanyId || 'demo-company-1',
+      myCompanyId: selectedCompanyId,
       description: formData.description,
       amount: parseFloat(formData.amount),
       currency: formData.currency,

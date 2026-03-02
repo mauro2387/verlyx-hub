@@ -191,16 +191,13 @@ export function Sidebar() {
   const { user, logout } = useAuthStore();
   const { companies, selectedCompanyId, fetchCompanies, selectCompany, getSelectedCompany } = useCompanyStore();
   const selectedCompany = getSelectedCompany();
-  
-  // Demo mode detection
-  const isDemoMode = user?.id?.startsWith('demo') || false;
 
   useEffect(() => {
     fetchCompanies();
     loadUnreadCount();
 
-    // Subscribe to notification changes (only for real users, not demo mode)
-    if (user?.id && !isDemoMode) {
+    // Subscribe to notification changes
+    if (user?.id) {
       const channel = supabase
         .channel('notifications_count')
         .on(
@@ -221,17 +218,11 @@ export function Sidebar() {
         supabase.removeChannel(channel);
       };
     }
-  }, [fetchCompanies, user?.id, isDemoMode]);
+  }, [fetchCompanies, user?.id]);
 
   const loadUnreadCount = async () => {
     try {
       if (!user?.id) return;
-      
-      // Demo mode - show sample count
-      if (isDemoMode) {
-        setUnreadCount(3);
-        return;
-      }
       
       const { count, error } = await supabase
         .from('notifications')
@@ -410,10 +401,10 @@ export function Sidebar() {
               />
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium text-gray-900 truncate">
-                  {user?.fullName || user?.name || 'Usuario Demo'}
+                  {user?.fullName || user?.name || 'Usuario'}
                 </p>
                 <p className="text-xs text-gray-500 truncate">
-                  {user?.email || 'demo@verlyx.com'}
+                  {user?.email || ''}
                 </p>
               </div>
             </div>

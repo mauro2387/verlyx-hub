@@ -24,61 +24,6 @@ interface AgencyProject {
   technologies?: string[];
 }
 
-// Demo projects for demo mode
-const demoProjects: AgencyProject[] = [
-  {
-    id: 'demo-1',
-    name: 'E-commerce Premium',
-    clientName: 'Fashion Store',
-    type: 'ecommerce',
-    status: 'development',
-    priority: 'high',
-    budget: 50000,
-    spent: 32000,
-    currency: 'USD',
-    startDate: '2025-01-01',
-    deadline: '2025-03-31',
-    progress: 65,
-    teamMembers: ['Ana García', 'Carlos López', 'María Rodríguez'],
-    description: 'Desarrollo de plataforma e-commerce con diseño premium y pasarela de pagos.',
-    technologies: ['Next.js', 'Stripe', 'PostgreSQL', 'Tailwind'],
-  },
-  {
-    id: 'demo-2',
-    name: 'App Delivery',
-    clientName: 'QuickFood',
-    type: 'mobile',
-    status: 'design',
-    priority: 'critical',
-    budget: 80000,
-    spent: 15000,
-    currency: 'USD',
-    startDate: '2025-01-10',
-    deadline: '2025-05-15',
-    progress: 25,
-    teamMembers: ['Pedro Martínez', 'Laura Sánchez', 'Juan Pérez', 'Ana García'],
-    description: 'Aplicación móvil de delivery con seguimiento en tiempo real.',
-    technologies: ['Flutter', 'Firebase', 'Google Maps', 'Node.js'],
-  },
-  {
-    id: 'demo-3',
-    name: 'Rediseño Corporativo',
-    clientName: 'Banco Nacional',
-    type: 'design',
-    status: 'discovery',
-    priority: 'medium',
-    budget: 25000,
-    spent: 3000,
-    currency: 'USD',
-    startDate: '2025-01-15',
-    deadline: '2025-02-28',
-    progress: 15,
-    teamMembers: ['María Rodríguez', 'Diego Fernández'],
-    description: 'Rediseño completo de identidad visual y sitio web corporativo.',
-    technologies: ['Figma', 'Webflow', 'Lottie'],
-  },
-];
-
 const statusConfig = {
   discovery: { label: 'Descubrimiento', color: 'bg-purple-100 text-purple-700', icon: '🔍' },
   design: { label: 'Diseño', color: 'bg-pink-100 text-pink-700', icon: '🎨' },
@@ -107,7 +52,6 @@ const priorityConfig = {
 export default function PulsarMoonPage() {
   const { user } = useAuthStore();
   const { selectedCompanyId } = useCompanyStore();
-  const isDemoMode = user?.id?.startsWith('demo') || false;
   
   const [projects, setProjects] = useState<AgencyProject[]>([]);
   const [loading, setLoading] = useState(true);
@@ -119,15 +63,9 @@ export default function PulsarMoonPage() {
   // Load projects from Supabase or demo data
   useEffect(() => {
     loadProjects();
-  }, [isDemoMode, selectedCompanyId]);
+  }, [selectedCompanyId]);
 
   const loadProjects = async () => {
-    if (isDemoMode) {
-      setProjects(demoProjects);
-      setLoading(false);
-      return;
-    }
-
     try {
       setLoading(true);
       const { data, error } = await supabase
@@ -184,14 +122,12 @@ export default function PulsarMoonPage() {
         title="PulsarMoon Agency"
         description="Gestión de proyectos de agencia digital"
         actions={
-          !isDemoMode && (
             <Button onClick={() => setIsProjectModalOpen(true)}>
               <svg className="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
               </svg>
               Nuevo Proyecto
             </Button>
-          )
         }
       />
 
@@ -230,12 +166,6 @@ export default function PulsarMoonPage() {
       {/* Controls */}
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-4">
-          {isDemoMode && (
-            <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-50 text-blue-700 rounded-lg text-sm">
-              <span>👁️</span>
-              <span className="font-medium">Modo Demo</span>
-            </div>
-          )}
           <Select
             value={filterType}
             onChange={(e) => setFilterType(e.target.value)}
@@ -281,7 +211,7 @@ export default function PulsarMoonPage() {
         <EmptyState
           icon="📋"
           title="No hay proyectos"
-          description={isDemoMode ? "No hay proyectos de demostración disponibles" : "Comienza creando tu primer proyecto"}
+          description="Comienza creando tu primer proyecto"
         />
       ) : viewMode === 'cards' && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">

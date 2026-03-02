@@ -59,7 +59,7 @@ export async function POST(request: NextRequest) {
 
     // Check if we have valid credentials
     if (!API_KEY || !SECRET_KEY) {
-      console.log('📌 No dLocal Go credentials - using demo mode');
+      console.warn('dLocal Go credentials not configured — using Verlyx Pay link only');
       payment_url = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/pay/${order_id}`;
     } else {
       // Don't call dLocal Go API here - just create Verlyx Pay link
@@ -101,7 +101,6 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      demo_mode: !paymentLink,
       payment_link: {
         ...savedLink,
         redirect_url: payment_url,

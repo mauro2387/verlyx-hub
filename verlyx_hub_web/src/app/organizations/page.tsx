@@ -41,119 +41,6 @@ interface Client {
   name: string;
 }
 
-const demoOrganizations: Organization[] = [
-  {
-    id: 'demo-1',
-    my_company_id: 'demo-company-1',
-    client_id: 'demo-client-1',
-    name: 'TechCorp Global HQ',
-    code: 'TCG-HQ',
-    type: 'HEADQUARTERS',
-    description: 'Sede central de operaciones globales. Coordina todas las subsidiarias y sucursales.',
-    address: 'Av. Libertador 1234',
-    city: 'Buenos Aires',
-    state: 'CABA',
-    country: 'Argentina',
-    postal_code: 'C1425',
-    phone: '+54 11 4567-8900',
-    email: 'hq@techcorp.com',
-    website: 'https://techcorp.com',
-    primary_contact_name: 'María González',
-    primary_contact_email: 'maria.gonzalez@techcorp.com',
-    primary_contact_phone: '+54 11 4567-8901',
-    employees_count: 500,
-    size: 'Grande (250+ empleados)',
-    tags: ['Tecnología', 'Corporativo', 'Internacional'],
-    is_active: true,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  },
-  {
-    id: 'demo-2',
-    my_company_id: 'demo-company-1',
-    client_id: 'demo-client-1',
-    parent_organization_id: 'demo-1',
-    name: 'TechCorp LATAM',
-    code: 'TCG-LATAM',
-    type: 'SUBSIDIARY',
-    description: 'División regional de Latinoamérica',
-    address: 'Calle 45 #678',
-    city: 'Santiago',
-    state: 'Metropolitana',
-    country: 'Chile',
-    phone: '+56 2 9876-5432',
-    email: 'latam@techcorp.com',
-    primary_contact_name: 'Carlos Méndez',
-    primary_contact_email: 'carlos.mendez@techcorp.com',
-    employees_count: 120,
-    size: 'Mediana (50-250 empleados)',
-    tags: ['LATAM', 'Regional'],
-    is_active: true,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  },
-  {
-    id: 'demo-3',
-    my_company_id: 'demo-company-1',
-    client_id: 'demo-client-1',
-    parent_organization_id: 'demo-1',
-    name: 'Sucursal Córdoba',
-    code: 'TCG-CBA',
-    type: 'BRANCH',
-    description: 'Sucursal regional de Córdoba',
-    address: 'Av. Colón 890',
-    city: 'Córdoba',
-    state: 'Córdoba',
-    country: 'Argentina',
-    phone: '+54 351 456-7890',
-    email: 'cordoba@techcorp.com',
-    primary_contact_name: 'Laura Fernández',
-    employees_count: 45,
-    size: 'Pequeña (10-50 empleados)',
-    is_active: true,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  },
-  {
-    id: 'demo-4',
-    my_company_id: 'demo-company-1',
-    client_id: 'demo-client-1',
-    parent_organization_id: 'demo-2',
-    name: 'Departamento de Ventas',
-    code: 'TCG-SALES',
-    type: 'DEPARTMENT',
-    description: 'Equipo de ventas LATAM',
-    employees_count: 30,
-    size: 'Pequeña (10-50 empleados)',
-    is_active: true,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  },
-  {
-    id: 'demo-5',
-    my_company_id: 'demo-company-1',
-    client_id: 'demo-client-2',
-    name: 'Innovatech Solutions',
-    code: 'ITS-HQ',
-    type: 'HEADQUARTERS',
-    description: 'Empresa de consultoría tecnológica especializada en transformación digital',
-    address: 'Av. Santa Fe 2456',
-    city: 'Buenos Aires',
-    state: 'CABA',
-    country: 'Argentina',
-    phone: '+54 11 5678-9012',
-    email: 'info@innovatech.com',
-    website: 'https://innovatech.com',
-    primary_contact_name: 'Roberto Silva',
-    employees_count: 85,
-    size: 'Mediana (50-250 empleados)',
-    tags: ['Consultoría', 'Software'],
-    is_active: true,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  },
-];
-
 const orgTypeConfig = {
   HEADQUARTERS: { 
     label: 'Sede Central', 
@@ -191,7 +78,6 @@ const sizeOptions = [
 export default function OrganizationsPage() {
   const { user } = useAuthStore();
   const { selectedCompanyId } = useCompanyStore();
-  const isDemoMode = user?.id?.startsWith('demo') || false;
   
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
@@ -232,20 +118,11 @@ export default function OrganizationsPage() {
   });
 
   useEffect(() => {
-    if (isDemoMode) {
-      setOrganizations(demoOrganizations);
-      setClients([
-        { id: 'demo-client-1', name: 'TechCorp Global' },
-        { id: 'demo-client-2', name: 'Innovatech Solutions' },
-      ]);
-      setLoading(false);
-    } else {
-      loadData();
-    }
-  }, [selectedCompanyId, isDemoMode]);
+    loadData();
+  }, [selectedCompanyId]);
 
   const loadData = async () => {
-    if (!selectedCompanyId || isDemoMode) return;
+    if (!selectedCompanyId) return;
     
     setLoading(true);
     try {
@@ -337,11 +214,6 @@ export default function OrganizationsPage() {
   };
 
   const handleOpenModal = (org?: Organization) => {
-    if (isDemoMode) {
-      alert('Esta funcionalidad está deshabilitada en modo demostración');
-      return;
-    }
-
     if (org) {
       setEditingOrg(org);
       setFormData({
@@ -396,7 +268,7 @@ export default function OrganizationsPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (isDemoMode || !selectedCompanyId) return;
+    if (!selectedCompanyId) return;
 
     try {
       const orgData = {
@@ -446,7 +318,7 @@ export default function OrganizationsPage() {
   };
 
   const handleDelete = async () => {
-    if (isDemoMode || !deletingOrg) return;
+    if (!deletingOrg) return;
 
     try {
       const { error } = await supabase
@@ -466,8 +338,6 @@ export default function OrganizationsPage() {
   };
 
   const handleToggleActive = async (org: Organization) => {
-    if (isDemoMode) return;
-
     try {
       const { error } = await supabase
         .from('client_organizations')
@@ -588,19 +458,7 @@ export default function OrganizationsPage() {
 
   return (
     <MainLayout>
-      {isDemoMode && (
-        <div className="mb-6 p-4 bg-yellow-50 border-l-4 border-yellow-400 rounded-lg">
-          <div className="flex items-center gap-3">
-            <span className="text-2xl">⚠️</span>
-            <div>
-              <p className="font-medium text-yellow-900">Modo Demostración</p>
-              <p className="text-sm text-yellow-700">Estás viendo datos de ejemplo. Las funciones de edición están deshabilitadas.</p>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {showInfoCard && allOrgs.length === 0 && !isDemoMode && (
+      {showInfoCard && allOrgs.length === 0 && (
         <Card className="mb-6 bg-gradient-to-r from-indigo-50 to-blue-50 border-2 border-indigo-200">
           <CardContent className="p-6">
             <div className="flex items-start gap-4">
@@ -742,11 +600,9 @@ export default function OrganizationsPage() {
             ? "No se encontraron organizaciones con los filtros aplicados" 
             : "Comienza creando tu primera organización para estructurar tus clientes"}
           action={
-            !isDemoMode && (
               <Button onClick={() => handleOpenModal()}>
                 Crear Primera Organización
               </Button>
-            )
           }
         />
       ) : viewMode === 'hierarchy' ? (
@@ -988,14 +844,12 @@ export default function OrganizationsPage() {
 
             <div className="flex justify-end gap-3 pt-4 border-t">
               <Button variant="outline" onClick={() => setIsDetailModalOpen(false)}>Cerrar</Button>
-              {!isDemoMode && (
-                <Button onClick={() => {
+              <Button onClick={() => {
                   setIsDetailModalOpen(false);
                   handleOpenModal(selectedOrgForDetail);
                 }}>
                   Editar Organización
-                </Button>
-              )}
+              </Button>
             </div>
           </div>
         )}

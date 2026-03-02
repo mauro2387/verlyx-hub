@@ -165,8 +165,13 @@ export default function IncomesPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
+    if (!selectedCompanyId) {
+      alert('Selecciona una empresa activa primero');
+      return;
+    }
+
     const incomeData = {
-      myCompanyId: selectedCompanyId || 'demo-company-1',
+      myCompanyId: selectedCompanyId,
       description: formData.description,
       amount: parseFloat(formData.amount),
       currency: formData.currency,

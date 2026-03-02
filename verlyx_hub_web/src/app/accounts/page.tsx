@@ -86,8 +86,13 @@ export default function AccountsPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
+    if (!selectedCompanyId) {
+      alert('Selecciona una empresa activa primero');
+      return;
+    }
+
     const accountData = {
-      myCompanyId: selectedCompanyId || 'demo-company-1',
+      myCompanyId: selectedCompanyId,
       name: formData.name,
       type: formData.type,
       currency: formData.currency,

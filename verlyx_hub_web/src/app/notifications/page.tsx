@@ -42,9 +42,6 @@ export default function NotificationsPage() {
   const [selectedNotification, setSelectedNotification] = useState<Notification | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Check if in demo mode
-  const isDemoMode = user?.id?.startsWith('demo') || false;
-
   // Load notifications
   useEffect(() => {
     if (!user?.id) {
@@ -52,61 +49,7 @@ export default function NotificationsPage() {
       return;
     }
 
-    if (isDemoMode) {
-      // Demo mode - show sample notifications
-      setNotifications([
-        {
-          id: 'demo-1',
-          type: 'task',
-          title: 'Tarea asignada',
-          message: 'Se te ha asignado la tarea "Revisar propuesta de diseño"',
-          is_read: false,
-          created_at: new Date(Date.now() - 3600000).toISOString(),
-          related_type: 'task',
-          related_name: 'Revisar propuesta de diseño',
-        },
-        {
-          id: 'demo-2',
-          type: 'payment',
-          title: 'Pago recibido',
-          message: 'Has recibido un pago de $1,500 USD de Cliente Demo',
-          is_read: false,
-          created_at: new Date(Date.now() - 7200000).toISOString(),
-          related_type: 'payment',
-        },
-        {
-          id: 'demo-3',
-          type: 'project',
-          title: 'Proyecto actualizado',
-          message: 'El proyecto "App Móvil" ha cambiado a estado "En Progreso"',
-          is_read: true,
-          created_at: new Date(Date.now() - 86400000).toISOString(),
-          read_at: new Date(Date.now() - 43200000).toISOString(),
-          related_type: 'project',
-          related_name: 'App Móvil',
-        },
-        {
-          id: 'demo-4',
-          type: 'reminder',
-          title: 'Recordatorio',
-          message: 'Reunión con el equipo mañana a las 10:00 AM',
-          is_read: true,
-          created_at: new Date(Date.now() - 172800000).toISOString(),
-        },
-        {
-          id: 'demo-5',
-          type: 'system',
-          title: 'Modo Demo Activo',
-          message: 'Estás viendo notificaciones de demostración. Inicia sesión con Supabase para ver notificaciones reales.',
-          is_read: false,
-          created_at: new Date().toISOString(),
-        },
-      ]);
-      setLoading(false);
-      return;
-    }
-
-    // Real mode - load from database
+    // Load from database
     loadNotifications();
     
     // Set up real-time subscription
@@ -129,10 +72,10 @@ export default function NotificationsPage() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [user?.id, isDemoMode]);
+  }, [user?.id]);
 
   const loadNotifications = async () => {
-    if (!user?.id || isDemoMode) return;
+    if (!user?.id) return;
 
     try {
       const { data, error } = await supabase
@@ -163,14 +106,6 @@ export default function NotificationsPage() {
   const markAsRead = async (id: string) => {
     if (!user?.id) return;
     
-    if (isDemoMode) {
-      // Demo mode - just update local state
-      setNotifications(notifications.map(n =>
-        n.id === id ? { ...n, is_read: true, read_at: new Date().toISOString() } : n
-      ));
-      return;
-    }
-    
     try {
       const response = await fetch(`/api/notifications/${id}`, {
         method: 'PATCH',
@@ -191,12 +126,6 @@ export default function NotificationsPage() {
   const markAllAsRead = async () => {
     if (!user?.id) return;
     
-    if (isDemoMode) {
-      // Demo mode - just update local state
-      setNotifications(notifications.map(n => ({ ...n, is_read: true, read_at: new Date().toISOString() })));
-      return;
-    }
-    
     try {
       const response = await fetch('/api/notifications/mark-all-read', {
         method: 'POST',
@@ -214,12 +143,6 @@ export default function NotificationsPage() {
 
   const deleteNotification = async (id: string) => {
     if (!user?.id) return;
-    
-    if (isDemoMode) {
-      // Demo mode - just update local state
-      setNotifications(notifications.filter(n => n.id !== id));
-      return;
-    }
     
     try {
       const response = await fetch(`/api/notifications/${id}?user_id=${user.id}`, {

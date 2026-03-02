@@ -51,92 +51,6 @@ interface Merchant {
   services?: string[];
 }
 
-// Demo data for demo mode
-const demoBuildings: Building[] = [
-  { 
-    id: 'demo-b1', 
-    name: 'Torre Norte Platinum', 
-    address: 'Av. Principal 1234', 
-    city: 'Buenos Aires',
-    country: 'Argentina',
-    type: 'residential', 
-    units: 48, 
-    occupiedUnits: 45, 
-    monthlyRevenue: 45000, 
-    yearlyRevenue: 540000,
-    constructionYear: 2020,
-    floors: 18,
-    parkingSpaces: 60,
-    amenities: ['Gimnasio', 'Piscina', 'SUM', 'Seguridad 24h'],
-    status: 'active', 
-    manager: 'Carlos Rodríguez',
-    managerContact: '+54 11 4567-8900',
-    description: 'Edificio residencial premium con amenities de primera categoría.'
-  },
-  { 
-    id: 'demo-b2', 
-    name: 'Plaza Central Business', 
-    address: 'Calle Comercial 567', 
-    city: 'Santiago',
-    country: 'Chile',
-    type: 'commercial', 
-    units: 24, 
-    occupiedUnits: 22, 
-    monthlyRevenue: 78000, 
-    yearlyRevenue: 936000,
-    constructionYear: 2018,
-    floors: 5,
-    parkingSpaces: 40,
-    amenities: ['Estacionamiento', 'Seguridad', 'Generador'],
-    status: 'active', 
-    manager: 'María López',
-    managerContact: '+56 2 9876-5432',
-    description: 'Centro comercial con locales de alto tráfico.'
-  },
-];
-
-const demoMerchants: Merchant[] = [
-  { 
-    id: 'demo-m1', 
-    name: 'La Parrilla Dorada', 
-    category: 'restaurant', 
-    location: 'Centro Histórico', 
-    address: 'Calle San Martín 234',
-    rating: 4.8, 
-    reviews: 324, 
-    status: 'active', 
-    verified: true, 
-    featured: true,
-    description: 'Restaurante de carnes premium con vista al mar.',
-    contactName: 'Alberto Gómez',
-    contactEmail: 'info@parrilladorada.com', 
-    phone: '+598 2123 4567',
-    website: 'www.parrilladorada.com',
-    priceRange: '$$$',
-    openingHours: '12:00 - 00:00',
-    services: ['Reservas', 'Delivery', 'Catering']
-  },
-  { 
-    id: 'demo-m2', 
-    name: 'Hotel Mirador Plaza', 
-    category: 'hotel', 
-    location: 'Punta del Este', 
-    address: 'Av. Gorlero 1890',
-    rating: 4.5, 
-    reviews: 892, 
-    status: 'active', 
-    verified: true, 
-    featured: true,
-    description: 'Hotel 5 estrellas con spa de lujo y casino.',
-    contactName: 'Claudia Martínez',
-    contactEmail: 'reservas@hotelmirador.com',
-    phone: '+598 4224 5678',
-    priceRange: '$$$$',
-    openingHours: '24 horas',
-    services: ['Spa', 'Piscina', 'Casino', 'Restaurante']
-  },
-];
-
 const buildingTypeConfig = {
   residential: { label: 'Residencial', color: 'bg-blue-100 text-blue-700 border-blue-300', icon: '🏠', desc: 'Departamentos y viviendas' },
   commercial: { label: 'Comercial', color: 'bg-purple-100 text-purple-700 border-purple-300', icon: '🏢', desc: 'Locales y tiendas' },
@@ -168,7 +82,6 @@ const statusConfig = {
 export default function VerlyxEcosystemPage() {
   const { user } = useAuthStore();
   const { selectedCompanyId } = useCompanyStore();
-  const isDemoMode = user?.id?.startsWith('demo') || false;
 
   const [activeModule, setActiveModule] = useState<'buildings' | 'tourism'>('buildings');
   const [buildings, setBuildings] = useState<Building[]>([]);
@@ -181,16 +94,9 @@ export default function VerlyxEcosystemPage() {
   // Load data on mount
   useEffect(() => {
     loadData();
-  }, [isDemoMode, selectedCompanyId, activeModule]);
+  }, [selectedCompanyId, activeModule]);
 
   const loadData = async () => {
-    if (isDemoMode) {
-      setBuildings(demoBuildings);
-      setMerchants(demoMerchants);
-      setLoading(false);
-      return;
-    }
-
     try {
       setLoading(true);
 
@@ -289,15 +195,6 @@ export default function VerlyxEcosystemPage() {
         description="Gestión de edificios y plataforma de turismo"
       />
 
-      {isDemoMode && (
-        <div className="mb-6">
-          <div className="flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-700 rounded-lg text-sm inline-flex">
-            <span>👁️</span>
-            <span className="font-medium">Modo Demo - Datos de ejemplo</span>
-          </div>
-        </div>
-      )}
-
       {/* Module Tabs */}
       <div className="flex gap-4 mb-6">
         <button
@@ -357,7 +254,7 @@ export default function VerlyxEcosystemPage() {
             <EmptyState
               icon="🏢"
               title="No hay edificios"
-              description={isDemoMode ? "No hay edificios de demostración" : "Comienza agregando tu primer edificio"}
+              description="Comienza agregando tu primer edificio"
             />
           ) : (
             <>
@@ -447,7 +344,7 @@ export default function VerlyxEcosystemPage() {
             <EmptyState
               icon="🏪"
               title="No hay comerciantes"
-              description={isDemoMode ? "No hay comerciantes de demostración" : "Comienza agregando tu primer comerciante"}
+              description="Comienza agregando tu primer comerciante"
             />
           ) : (
             <>

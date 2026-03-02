@@ -108,9 +108,6 @@ export default function MyCompaniesPage() {
     secondary_color: '#8b5cf6',
   });
 
-  // Check if in demo mode (user ID starts with 'demo')
-  const isDemoMode = user?.id?.startsWith('demo') || false;
-
   // Fetch companies
   const fetchCompanies = useCallback(async () => {
     if (!user?.id) {
@@ -120,41 +117,7 @@ export default function MyCompaniesPage() {
 
     setIsLoading(true);
     try {
-      if (isDemoMode) {
-        // Demo mode - show sample data
-        setCompanies([
-          {
-            id: 'demo-company-1',
-            owner_user_id: user.id,
-            name: 'Mi Empresa Demo',
-            type: 'technology',
-            description: 'Esta es una empresa de demostración. Inicia sesión con Supabase para crear empresas reales.',
-            logo_url: null,
-            primary_color: '#6366f1',
-            secondary_color: '#8b5cf6',
-            tax_id: null,
-            industry: 'Software',
-            website: 'https://ejemplo.com',
-            phone: '+598 99 123 456',
-            email: 'demo@empresa.com',
-            address: 'Calle Demo 123',
-            city: 'Montevideo',
-            country: 'Uruguay',
-            settings: {},
-            is_active: true,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-            projects_count: 3,
-            deals_count: 5,
-            tasks_count: 12,
-          }
-        ]);
-        setSelectedCompanyId('demo-company-1');
-        setIsLoading(false);
-        return;
-      }
-
-      // Real mode - fetch from Supabase
+      // Fetch from Supabase
       const { data: companiesData, error } = await supabase
         .from('my_companies')
         .select('*')
@@ -213,7 +176,7 @@ export default function MyCompaniesPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [user?.id, isDemoMode, selectedCompanyId]);
+  }, [user?.id, selectedCompanyId]);
 
   useEffect(() => {
     fetchCompanies();
@@ -273,11 +236,6 @@ export default function MyCompaniesPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.name.trim()) return;
-
-    if (isDemoMode) {
-      alert('En modo demo no se pueden crear empresas reales. Inicia sesión con Supabase para habilitar esta función.');
-      return;
-    }
 
     if (!user?.id) {
       alert('Debes iniciar sesión para crear empresas');
@@ -342,12 +300,6 @@ export default function MyCompaniesPage() {
   const handleDeleteConfirm = async () => {
     if (!companyToDelete) return;
 
-    if (isDemoMode) {
-      alert('En modo demo no se pueden eliminar empresas.');
-      setDeleteDialogOpen(false);
-      return;
-    }
-
     try {
       const { error } = await supabase
         .from('my_companies')
@@ -367,11 +319,6 @@ export default function MyCompaniesPage() {
 
   // Toggle active status
   const handleToggleActive = async (company: MyCompany) => {
-    if (isDemoMode) {
-      alert('En modo demo no se pueden modificar empresas.');
-      return;
-    }
-
     try {
       const { error } = await supabase
         .from('my_companies')
@@ -419,7 +366,7 @@ export default function MyCompaniesPage() {
         title="Mis Empresas"
         description="Gestiona tus empresas y organizaciones"
         actions={
-          <Button onClick={() => handleOpenModal()} disabled={isDemoMode}>
+          <Button onClick={() => handleOpenModal()}>
             <svg className="w-5 h-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
             </svg>
@@ -427,24 +374,6 @@ export default function MyCompaniesPage() {
           </Button>
         }
       />
-
-      {/* Demo Mode Banner */}
-      {isDemoMode && (
-        <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-lg flex items-center gap-3">
-          <div className="w-10 h-10 bg-amber-100 rounded-full flex items-center justify-center flex-shrink-0">
-            <svg className="w-6 h-6 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-          </div>
-          <div className="flex-1">
-            <h4 className="font-medium text-amber-800">Modo Demo</h4>
-            <p className="text-sm text-amber-700">
-              Estás viendo datos de demostración. Para crear y gestionar empresas reales, 
-              <a href="/login" className="underline font-medium ml-1">inicia sesión con tu cuenta de Supabase</a>.
-            </p>
-          </div>
-        </div>
-      )}
 
       {/* Stats Cards */}
       {companies.length > 0 && (
