@@ -1811,6 +1811,8 @@ interface IncomesState {
   addIncome: (income: Omit<Income, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>;
   updateIncome: (id: string, data: Partial<Income>) => Promise<void>;
   deleteIncome: (id: string) => Promise<void>;
+  markIncomePaid: (id: string, receiptUrl?: string | null, paymentMethod?: string) => Promise<boolean>;
+  generateRecurringIncomes: () => Promise<number>;
   setFilter: (filter: Partial<IncomesState['filter']>) => void;
   getFilteredIncomes: () => Income[];
   getTotalIncomes: () => number;
@@ -1841,7 +1843,8 @@ export const useIncomesStore = create<IncomesState>((set, get) => ({
     });
     
     if (data && !error) {
-      const incomes: Income[] = data.map(i => ({
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const incomes: Income[] = data.map((i: any) => ({
         id: i.id,
         myCompanyId: i.my_company_id,
         description: i.description,
@@ -1895,6 +1898,12 @@ export const useIncomesStore = create<IncomesState>((set, get) => ({
         dueDate: i.due_date,
         isRecurring: i.is_recurring,
         recurringFrequency: i.recurring_frequency,
+        recurringScheduleId: i.recurring_schedule_id || null,
+        receiptUrl: i.receipt_url || null,
+        receiptUploadedAt: i.receipt_uploaded_at || null,
+        paidAt: i.paid_at || null,
+        paymentStructure: i.payment_structure || null,
+        isDevelopmentPayment: i.is_development_payment || false,
         createdBy: i.created_by,
         createdAt: i.created_at,
         updatedAt: i.updated_at,
@@ -1994,6 +2003,52 @@ export const useIncomesStore = create<IncomesState>((set, get) => ({
   getOverdueIncomes: () => {
     const today = new Date().toISOString().split('T')[0];
     return get().incomes.filter((i) => i.status === 'pending' && i.dueDate && i.dueDate < today);
+  },
+  markIncomePaid: async (id: string, receiptUrl?: string | null, paymentMethod?: string) => {
+    const { data, error } = await supabase.rpc('mark_income_paid', {
+      p_income_id: id,
+      p_receipt_url: receiptUrl || null,
+      p_payment_date: new Date().toISOString().split('T')[0],
+      p_payment_method: paymentMethod || 'transfer',
+    });
+
+    if (error) {
+      console.error('[Incomes] Mark paid failed:', error);
+      // Fallback: direct update if RPC doesn't exist yet
+      const { error: updateError } = await supabase
+        .from('incomes')
+        .update({
+          status: 'received',
+          payment_date: new Date().toISOString().split('T')[0],
+          payment_method: paymentMethod || 'transfer',
+          receipt_url: receiptUrl || null,
+          receipt_uploaded_at: receiptUrl ? new Date().toISOString() : null,
+          paid_at: new Date().toISOString(),
+        })
+        .eq('id', id);
+      
+      if (updateError) {
+        toast.error('Error', 'No se pudo marcar el pago como recibido.');
+        return false;
+      }
+    }
+
+    toast.success('Pago registrado', 'El ingreso se marcó como recibido.');
+    get().fetchIncomes();
+    return true;
+  },
+  generateRecurringIncomes: async () => {
+    const { data, error } = await supabase.rpc('generate_recurring_incomes');
+    if (error) {
+      console.error('[Incomes] Generate recurring failed:', error);
+      return 0;
+    }
+    const generated = Array.isArray(data) ? data.length : 0;
+    if (generated > 0) {
+      toast.info('Ingresos recurrentes', `Se generaron ${generated} ingreso(s) recurrente(s) pendiente(s).`);
+      get().fetchIncomes();
+    }
+    return generated;
   },
 }));
 
@@ -3008,7 +3063,7 @@ interface OpportunitiesState {
   updateOpportunity: (id: string, data: Partial<Opportunity>) => Promise<void>;
   deleteOpportunity: (id: string) => Promise<void>;
   changeStage: (id: string, stage: OpportunityStage, stageData: Record<string, unknown>) => Promise<boolean>;
-  executeOpportunityWon: (id: string) => Promise<{ projectId?: string; clientId?: string } | null>;
+  executeOpportunityWon: (id: string) => Promise<{ projectId?: string; clientId?: string; incomeId?: string; scheduleId?: string; paymentStructure?: string } | null>;
   setSelectedOpportunity: (opp: Opportunity | null) => void;
   setFilter: (filter: Partial<OpportunitiesState['filter']>) => void;
 }
@@ -3265,8 +3320,19 @@ export const useOpportunitiesStore = create<OpportunitiesState>((set, get) => ({
     }
 
     if (data) {
-      toast.success('Oportunidad ganada', 'Cliente actualizado, proyecto y tarea de onboarding creados automáticamente.');
-      return { projectId: data.project_id, clientId: data.client_id };
+      const paymentMsg = data.payment_structure === 'dev_plus_maintenance'
+        ? 'Cobro de desarrollo + mantenimiento recurrente configurado.'
+        : data.payment_structure === 'recurring'
+        ? 'Plan de cobro recurrente configurado.'
+        : 'Ingreso registrado.';
+      toast.success('Oportunidad ganada', `Cliente actualizado, proyecto creado. ${paymentMsg}`);
+      return {
+        projectId: data.project_id,
+        clientId: data.client_id,
+        incomeId: data.income_id || data.dev_income_id,
+        scheduleId: data.schedule_id,
+        paymentStructure: data.payment_structure,
+      };
     }
     return null;
   },

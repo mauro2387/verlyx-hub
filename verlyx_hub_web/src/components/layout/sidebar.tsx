@@ -150,6 +150,21 @@ const MoreIcons = {
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
     </svg>
   ),
+  Incomes: () => (
+    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+    </svg>
+  ),
+  Expenses: () => (
+    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
+    </svg>
+  ),
+  Accounts: () => (
+    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3" />
+    </svg>
+  ),
 };
 
 const mainNavigation = [
@@ -162,6 +177,13 @@ const mainNavigation = [
   { name: 'Calendario', href: '/calendar', icon: MoreIcons.Calendar },
 ];
 
+const financeNavigation = [
+  { name: 'Ingresos', href: '/incomes', icon: MoreIcons.Incomes },
+  { name: 'Gastos', href: '/expenses', icon: MoreIcons.Expenses },
+  { name: 'Cuentas', href: '/accounts', icon: MoreIcons.Accounts },
+  { name: 'Pagos', href: '/payments', icon: MoreIcons.Payments },
+];
+
 const toolsNavigation = [
   { name: 'Equipo', href: '/team', icon: MoreIcons.Team },
   { name: 'Cotizaciones', href: '/quotes', icon: MoreIcons.Quotes },
@@ -172,7 +194,6 @@ const toolsNavigation = [
   { name: 'Documentos', href: '/documents', icon: Icons.Documents },
   { name: 'PDF & Contratos', href: '/pdf-generator', icon: MoreIcons.PDF },
   { name: 'Workspace', href: '/workspace', icon: MoreIcons.Workspace },
-  { name: 'Pagos', href: '/payments', icon: MoreIcons.Payments },
   { name: 'Notificaciones', href: '/notifications', icon: MoreIcons.Notifications },
 ];
 
@@ -359,6 +380,32 @@ export function Sidebar() {
                           {unreadCount > 99 ? '99+' : unreadCount}
                         </span>
                       )}
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Finance Navigation */}
+            <div>
+              <p className="px-3 mb-2 text-xs font-semibold text-gray-400 uppercase tracking-wider">Finanzas</p>
+              <div className="space-y-1">
+                {financeNavigation.map((item) => {
+                  const isActive = pathname === item.href || pathname.startsWith(item.href + '/');
+                  return (
+                    <Link
+                      key={item.name}
+                      href={item.href}
+                      onClick={() => setIsMobileMenuOpen(false)}
+                      className={cn(
+                        'flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors',
+                        isActive
+                          ? 'bg-indigo-50 text-indigo-700'
+                          : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                      )}
+                    >
+                      <item.icon />
+                      <span className="flex-1">{item.name}</span>
                     </Link>
                   );
                 })}

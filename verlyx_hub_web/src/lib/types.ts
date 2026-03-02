@@ -273,6 +273,44 @@ export interface Income {
   dueDate?: string | null;
   isRecurring: boolean;
   recurringFrequency?: string | null;
+  recurringScheduleId?: string | null;
+  receiptUrl?: string | null;
+  receiptUploadedAt?: string | null;
+  paidAt?: string | null;
+  paymentStructure?: PaymentStructure | null;
+  isDevelopmentPayment?: boolean;
+  createdBy?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type PaymentStructure = 'one_time' | 'recurring' | 'dev_plus_maintenance';
+
+export interface RecurringPaymentSchedule {
+  id: string;
+  myCompanyId: string;
+  opportunityId?: string | null;
+  projectId?: string | null;
+  clientId?: string | null;
+  paymentStructure: PaymentStructure;
+  devAmount: number;
+  devCurrency: string;
+  devDescription?: string | null;
+  devIncomeId?: string | null;
+  devPaid: boolean;
+  recurringAmount: number;
+  recurringCurrency: string;
+  recurringDescription?: string | null;
+  frequency: 'monthly' | 'quarterly' | 'semi_annual' | 'annual';
+  startDate: string;
+  nextDueDate: string;
+  endDate?: string | null;
+  isActive: boolean;
+  totalInvoiced: number;
+  totalPaid: number;
+  invoicesGenerated: number;
+  invoicesPaid: number;
+  notes?: string | null;
   createdBy?: string | null;
   createdAt: string;
   updatedAt: string;

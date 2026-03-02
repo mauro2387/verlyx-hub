@@ -1,10 +1,11 @@
 'use client';
 
 import { useEffect, useState, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
 import { MainLayout, PageHeader } from '@/components/layout';
 import { Button, Card, CardContent, Loading, Modal, Input, Textarea, Select, ConfirmDialog, StatCard, Badge, SearchInput } from '@/components/ui';
 import { useOpportunitiesStore, useClientsStore, useCompanyStore } from '@/lib/store';
-import { Opportunity, OpportunityStage } from '@/lib/types';
+import { Opportunity, OpportunityStage, PaymentStructure } from '@/lib/types';
 import { opportunityStageColors, priorityColors, formatCurrency, cn } from '@/lib/utils';
 
 const OPP_STAGES: OpportunityStage[] = ['qualified', 'proposal', 'negotiation', 'won', 'lost'];
@@ -98,10 +99,31 @@ export default function DealsPage() {
   const [wonDialogOpen, setWonDialogOpen] = useState(false);
   const [lostDialogOpen, setLostDialogOpen] = useState(false);
   const [stageTransitionOpp, setStageTransitionOpp] = useState<Opportunity | null>(null);
-  const [wonFormData, setWonFormData] = useState({ finalAmount: '', finalCurrency: 'UYU', paymentType: '', startDate: '', wonReason: '' });
+  const [wonFormData, setWonFormData] = useState({
+    finalAmount: '',
+    finalCurrency: 'UYU',
+    paymentType: '' as string,
+    paymentStructure: '' as '' | 'one_time' | 'recurring' | 'dev_plus_maintenance',
+    devAmount: '',
+    recurringAmount: '',
+    recurringFrequency: 'monthly' as string,
+    startDate: '',
+    wonReason: '',
+  });
   const [lostFormData, setLostFormData] = useState({ lostReason: '', lostNote: '' });
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [wonSuccessData, setWonSuccessData] = useState<{
+    oppTitle: string;
+    projectId?: string;
+    clientId?: string;
+    incomeId?: string;
+    scheduleId?: string;
+    paymentStructure?: PaymentStructure;
+    amount: number;
+    currency: string;
+  } | null>(null);
   const [formData, setFormData] = useState<OppFormData>(EMPTY_FORM);
+  const router = useRouter();
 
   useEffect(() => {
     fetchOpportunities();
@@ -268,6 +290,10 @@ export default function DealsPage() {
         finalAmount: opp.tentativeAmount?.toString() || opp.estimatedAmountMax?.toString() || '',
         finalCurrency: opp.currency || 'UYU',
         paymentType: '',
+        paymentStructure: '',
+        devAmount: '',
+        recurringAmount: '',
+        recurringFrequency: 'monthly',
         startDate: new Date().toISOString().split('T')[0],
         wonReason: '',
       });
@@ -304,21 +330,64 @@ export default function DealsPage() {
 
   const handleWonConfirm = async () => {
     if (!stageTransitionOpp) return;
-    if (!wonFormData.finalAmount || parseFloat(wonFormData.finalAmount) <= 0) return;
-    if (!wonFormData.paymentType) return;
+    if (!wonFormData.paymentStructure) return;
+
+    // Validate amounts based on payment structure
+    if (wonFormData.paymentStructure === 'one_time') {
+      if (!wonFormData.finalAmount || parseFloat(wonFormData.finalAmount) <= 0) return;
+    } else if (wonFormData.paymentStructure === 'recurring') {
+      if (!wonFormData.recurringAmount || parseFloat(wonFormData.recurringAmount) <= 0) return;
+    } else if (wonFormData.paymentStructure === 'dev_plus_maintenance') {
+      if (!wonFormData.devAmount || parseFloat(wonFormData.devAmount) <= 0) return;
+      if (!wonFormData.recurringAmount || parseFloat(wonFormData.recurringAmount) <= 0) return;
+    }
+
+    // Calculate total finalAmount
+    let totalAmount = 0;
+    if (wonFormData.paymentStructure === 'one_time') {
+      totalAmount = parseFloat(wonFormData.finalAmount);
+    } else if (wonFormData.paymentStructure === 'recurring') {
+      totalAmount = parseFloat(wonFormData.recurringAmount);
+    } else if (wonFormData.paymentStructure === 'dev_plus_maintenance') {
+      totalAmount = parseFloat(wonFormData.devAmount) + parseFloat(wonFormData.recurringAmount);
+    }
+
+    // Map structure to legacy payment_type for column compatibility
+    const paymentTypeMap: Record<string, string> = {
+      one_time: 'one_time',
+      recurring: wonFormData.recurringFrequency || 'monthly',
+      dev_plus_maintenance: 'custom',
+    };
 
     setIsSubmitting(true);
     const success = await changeStage(stageTransitionOpp.id, 'won', {
-      final_amount: parseFloat(wonFormData.finalAmount),
+      final_amount: totalAmount,
       final_currency: wonFormData.finalCurrency || 'UYU',
-      payment_type: wonFormData.paymentType,
+      payment_type: paymentTypeMap[wonFormData.paymentStructure] || 'one_time',
       start_date: wonFormData.startDate || new Date().toISOString().split('T')[0],
       won_reason: wonFormData.wonReason || null,
+      custom_fields: {
+        ...(stageTransitionOpp.customFields || {}),
+        payment_structure: wonFormData.paymentStructure,
+        dev_amount: wonFormData.paymentStructure === 'dev_plus_maintenance' ? parseFloat(wonFormData.devAmount) : 0,
+        recurring_amount: wonFormData.paymentStructure !== 'one_time' ? parseFloat(wonFormData.recurringAmount) : 0,
+        recurring_frequency: wonFormData.recurringFrequency || 'monthly',
+      },
     });
 
     if (success) {
-      // Execute lifecycle automation: create client, project, onboarding task
-      await useOpportunitiesStore.getState().executeOpportunityWon(stageTransitionOpp.id);
+      // Execute lifecycle automation: create client, project, incomes, schedules
+      const result = await useOpportunitiesStore.getState().executeOpportunityWon(stageTransitionOpp.id);
+      setWonSuccessData({
+        oppTitle: stageTransitionOpp.title,
+        projectId: result?.projectId,
+        clientId: result?.clientId,
+        incomeId: result?.incomeId,
+        scheduleId: result?.scheduleId,
+        paymentStructure: result?.paymentStructure as PaymentStructure | undefined,
+        amount: totalAmount,
+        currency: wonFormData.finalCurrency || 'UYU',
+      });
     }
 
     setIsSubmitting(false);
@@ -1196,7 +1265,7 @@ export default function DealsPage() {
         isOpen={wonDialogOpen}
         onClose={() => { setWonDialogOpen(false); setStageTransitionOpp(null); }}
         title="Marcar como Ganada"
-        size="md"
+        size="lg"
       >
         <div className="space-y-4">
           <div className="p-4 bg-green-50 rounded-lg border border-green-200">
@@ -1218,19 +1287,70 @@ export default function DealsPage() {
               </li>
               <li className="flex items-center gap-2">
                 <svg className="w-4 h-4 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
-                Registrar ingreso pendiente
+                Registrar ingresos y plan de cobro
               </li>
             </ul>
           </div>
 
+          {/* === PAYMENT STRUCTURE SELECTOR === */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Estructura de Pago *</label>
+            <div className="grid grid-cols-3 gap-3">
+              {/* Pago Único */}
+              <button
+                type="button"
+                onClick={() => setWonFormData({ ...wonFormData, paymentStructure: 'one_time', paymentType: 'one_time' })}
+                className={`p-3 rounded-lg border-2 text-left transition-all ${
+                  wonFormData.paymentStructure === 'one_time'
+                    ? 'border-green-500 bg-green-50 ring-1 ring-green-500'
+                    : 'border-gray-200 hover:border-gray-300'
+                }`}
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  <svg className="w-5 h-5 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                  <span className="font-medium text-sm">Pago Único</span>
+                </div>
+                <p className="text-xs text-gray-500">Un solo cobro por el servicio</p>
+              </button>
+
+              {/* Recurrente */}
+              <button
+                type="button"
+                onClick={() => setWonFormData({ ...wonFormData, paymentStructure: 'recurring', paymentType: 'monthly' })}
+                className={`p-3 rounded-lg border-2 text-left transition-all ${
+                  wonFormData.paymentStructure === 'recurring'
+                    ? 'border-blue-500 bg-blue-50 ring-1 ring-blue-500'
+                    : 'border-gray-200 hover:border-gray-300'
+                }`}
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  <svg className="w-5 h-5 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                  <span className="font-medium text-sm">Recurrente</span>
+                </div>
+                <p className="text-xs text-gray-500">Pago periódico (mensual, etc.)</p>
+              </button>
+
+              {/* Desarrollo + Mantenimiento */}
+              <button
+                type="button"
+                onClick={() => setWonFormData({ ...wonFormData, paymentStructure: 'dev_plus_maintenance', paymentType: 'custom' })}
+                className={`p-3 rounded-lg border-2 text-left transition-all ${
+                  wonFormData.paymentStructure === 'dev_plus_maintenance'
+                    ? 'border-purple-500 bg-purple-50 ring-1 ring-purple-500'
+                    : 'border-gray-200 hover:border-gray-300'
+                }`}
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  <svg className="w-5 h-5 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" /></svg>
+                  <span className="font-medium text-sm">Dev + Mantenimiento</span>
+                </div>
+                <p className="text-xs text-gray-500">Cobro por desarrollo + mensualidad</p>
+              </button>
+            </div>
+          </div>
+
+          {/* === CURRENCY & DATE (always shown) === */}
           <div className="grid grid-cols-2 gap-4">
-            <Input
-              label="Monto Final *"
-              type="number"
-              placeholder="0"
-              value={wonFormData.finalAmount}
-              onChange={(e) => setWonFormData({ ...wonFormData, finalAmount: e.target.value })}
-            />
             <Select
               label="Moneda *"
               value={wonFormData.finalCurrency}
@@ -1241,22 +1361,6 @@ export default function DealsPage() {
                 { value: 'EUR', label: 'EUR (€)' },
               ]}
             />
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <Select
-              label="Tipo de Pago *"
-              value={wonFormData.paymentType}
-              onChange={(e) => setWonFormData({ ...wonFormData, paymentType: e.target.value })}
-              options={[
-                { value: '', label: 'Seleccionar...' },
-                { value: 'one_time', label: 'Pago Único' },
-                { value: 'monthly', label: 'Mensual' },
-                { value: 'quarterly', label: 'Trimestral' },
-                { value: 'annual', label: 'Anual' },
-                { value: 'milestone', label: 'Por Hito' },
-                { value: 'custom', label: 'Personalizado' },
-              ]}
-            />
             <Input
               label="Fecha de Inicio *"
               type="date"
@@ -1264,6 +1368,122 @@ export default function DealsPage() {
               onChange={(e) => setWonFormData({ ...wonFormData, startDate: e.target.value })}
             />
           </div>
+
+          {/* === ONE-TIME: Single amount === */}
+          {wonFormData.paymentStructure === 'one_time' && (
+            <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
+              <Input
+                label="Monto Total *"
+                type="number"
+                placeholder="0"
+                value={wonFormData.finalAmount}
+                onChange={(e) => setWonFormData({ ...wonFormData, finalAmount: e.target.value })}
+              />
+            </div>
+          )}
+
+          {/* === RECURRING: Amount + frequency === */}
+          {wonFormData.paymentStructure === 'recurring' && (
+            <div className="p-4 bg-blue-50 rounded-lg border border-blue-200 space-y-3">
+              <h4 className="text-sm font-medium text-blue-800">Pago Recurrente</h4>
+              <div className="grid grid-cols-2 gap-4">
+                <Input
+                  label="Monto por Período *"
+                  type="number"
+                  placeholder="0"
+                  value={wonFormData.recurringAmount}
+                  onChange={(e) => setWonFormData({ ...wonFormData, recurringAmount: e.target.value })}
+                />
+                <Select
+                  label="Frecuencia *"
+                  value={wonFormData.recurringFrequency}
+                  onChange={(e) => setWonFormData({ ...wonFormData, recurringFrequency: e.target.value })}
+                  options={[
+                    { value: 'monthly', label: 'Mensual' },
+                    { value: 'quarterly', label: 'Trimestral' },
+                    { value: 'semi_annual', label: 'Semestral' },
+                    { value: 'annual', label: 'Anual' },
+                  ]}
+                />
+              </div>
+              <p className="text-xs text-blue-600">
+                Se generarán ingresos pendientes automáticamente cada período. Recibirás alertas si hay pagos vencidos.
+              </p>
+            </div>
+          )}
+
+          {/* === DEV + MAINTENANCE: Two amounts === */}
+          {wonFormData.paymentStructure === 'dev_plus_maintenance' && (
+            <div className="space-y-3">
+              {/* Development fee */}
+              <div className="p-4 bg-amber-50 rounded-lg border border-amber-200 space-y-3">
+                <h4 className="text-sm font-medium text-amber-800 flex items-center gap-2">
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" /></svg>
+                  Cobro por Desarrollo (único)
+                </h4>
+                <Input
+                  label="Monto de Desarrollo *"
+                  type="number"
+                  placeholder="0"
+                  value={wonFormData.devAmount}
+                  onChange={(e) => setWonFormData({ ...wonFormData, devAmount: e.target.value })}
+                />
+                <p className="text-xs text-amber-600">
+                  Cobro único por el desarrollo del proyecto.
+                </p>
+              </div>
+
+              {/* Recurring maintenance */}
+              <div className="p-4 bg-purple-50 rounded-lg border border-purple-200 space-y-3">
+                <h4 className="text-sm font-medium text-purple-800 flex items-center gap-2">
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                  Mensualidad / Mantenimiento (recurrente)
+                </h4>
+                <div className="grid grid-cols-2 gap-4">
+                  <Input
+                    label="Monto Mensual *"
+                    type="number"
+                    placeholder="0"
+                    value={wonFormData.recurringAmount}
+                    onChange={(e) => setWonFormData({ ...wonFormData, recurringAmount: e.target.value })}
+                  />
+                  <Select
+                    label="Frecuencia *"
+                    value={wonFormData.recurringFrequency}
+                    onChange={(e) => setWonFormData({ ...wonFormData, recurringFrequency: e.target.value })}
+                    options={[
+                      { value: 'monthly', label: 'Mensual' },
+                      { value: 'quarterly', label: 'Trimestral' },
+                      { value: 'semi_annual', label: 'Semestral' },
+                      { value: 'annual', label: 'Anual' },
+                    ]}
+                  />
+                </div>
+                <p className="text-xs text-purple-600">
+                  Se generarán ingresos pendientes automáticamente. Recibirás alertas si hay pagos vencidos.
+                </p>
+              </div>
+
+              {/* Summary */}
+              {wonFormData.devAmount && wonFormData.recurringAmount && (
+                <div className="p-3 bg-gray-100 rounded-lg border border-gray-200">
+                  <p className="text-sm text-gray-700 font-medium">Resumen del cobro:</p>
+                  <div className="mt-1 text-sm text-gray-600 space-y-1">
+                    <p>Desarrollo: {wonFormData.finalCurrency} {parseFloat(wonFormData.devAmount).toLocaleString()}</p>
+                    <p>Mantenimiento: {wonFormData.finalCurrency} {parseFloat(wonFormData.recurringAmount).toLocaleString()} / {
+                      wonFormData.recurringFrequency === 'monthly' ? 'mes' :
+                      wonFormData.recurringFrequency === 'quarterly' ? 'trimestre' :
+                      wonFormData.recurringFrequency === 'semi_annual' ? 'semestre' : 'año'
+                    }</p>
+                    <p className="font-semibold text-gray-800 pt-1 border-t">
+                      Total inicial: {wonFormData.finalCurrency} {(parseFloat(wonFormData.devAmount) + parseFloat(wonFormData.recurringAmount)).toLocaleString()}
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           <Input
             label="Razón de Éxito"
             placeholder="¿Por qué se ganó?"
@@ -1277,7 +1497,11 @@ export default function DealsPage() {
             </Button>
             <Button
               onClick={handleWonConfirm}
-              disabled={isSubmitting || !wonFormData.finalAmount || !wonFormData.paymentType}
+              disabled={isSubmitting || !wonFormData.paymentStructure || (
+                wonFormData.paymentStructure === 'one_time' ? !wonFormData.finalAmount :
+                wonFormData.paymentStructure === 'recurring' ? !wonFormData.recurringAmount :
+                !wonFormData.devAmount || !wonFormData.recurringAmount
+              )}
               className="bg-green-600 hover:bg-green-700 text-white"
             >
               {isSubmitting ? 'Procesando...' : 'Confirmar Ganada'}
@@ -1338,6 +1562,105 @@ export default function DealsPage() {
             </Button>
           </div>
         </div>
+      </Modal>
+      {/* WON Success Modal */}
+      <Modal
+        isOpen={!!wonSuccessData}
+        onClose={() => setWonSuccessData(null)}
+        title="🎉 ¡Oportunidad Ganada!"
+        size="md"
+      >
+        {wonSuccessData && (
+          <div className="space-y-5">
+            <div className="p-4 bg-green-50 rounded-lg border border-green-200 text-center">
+              <p className="text-lg font-semibold text-green-800">{wonSuccessData.oppTitle}</p>
+              <p className="text-2xl font-bold text-green-700 mt-1">
+                {formatCurrency(wonSuccessData.amount, wonSuccessData.currency)}
+              </p>
+              {wonSuccessData.paymentStructure === 'dev_plus_maintenance' && (
+                <p className="text-sm text-green-600 mt-1">Desarrollo + Mantenimiento recurrente</p>
+              )}
+              {wonSuccessData.paymentStructure === 'recurring' && (
+                <p className="text-sm text-green-600 mt-1">Plan de cobro recurrente configurado</p>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <p className="text-sm font-medium text-gray-700">Se crearon automáticamente:</p>
+              <div className="space-y-2">
+                {wonSuccessData.projectId && (
+                  <button
+                    onClick={() => { router.push(`/projects`); setWonSuccessData(null); }}
+                    className="w-full flex items-center gap-3 p-3 bg-blue-50 hover:bg-blue-100 rounded-lg border border-blue-200 transition-colors text-left"
+                  >
+                    <span className="text-xl">📁</span>
+                    <div>
+                      <p className="text-sm font-medium text-blue-800">Proyecto</p>
+                      <p className="text-xs text-blue-600">Ver en la lista de proyectos</p>
+                    </div>
+                    <svg className="w-4 h-4 ml-auto text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                  </button>
+                )}
+
+                {wonSuccessData.incomeId && (
+                  <button
+                    onClick={() => { router.push('/incomes'); setWonSuccessData(null); }}
+                    className="w-full flex items-center gap-3 p-3 bg-emerald-50 hover:bg-emerald-100 rounded-lg border border-emerald-200 transition-colors text-left"
+                  >
+                    <span className="text-xl">💰</span>
+                    <div>
+                      <p className="text-sm font-medium text-emerald-800">Ingreso Registrado</p>
+                      <p className="text-xs text-emerald-600">
+                        {wonSuccessData.paymentStructure === 'one_time' ? 'Pago único pendiente de cobro' : 'Primer cobro programado'}
+                      </p>
+                    </div>
+                    <svg className="w-4 h-4 ml-auto text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                  </button>
+                )}
+
+                {wonSuccessData.scheduleId && (
+                  <button
+                    onClick={() => { router.push('/incomes'); setWonSuccessData(null); }}
+                    className="w-full flex items-center gap-3 p-3 bg-purple-50 hover:bg-purple-100 rounded-lg border border-purple-200 transition-colors text-left"
+                  >
+                    <span className="text-xl">🔄</span>
+                    <div>
+                      <p className="text-sm font-medium text-purple-800">Cobro Recurrente</p>
+                      <p className="text-xs text-purple-600">Plan de cobros automáticos configurado</p>
+                    </div>
+                    <svg className="w-4 h-4 ml-auto text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                  </button>
+                )}
+
+                {wonSuccessData.clientId && (
+                  <button
+                    onClick={() => { router.push('/clients'); setWonSuccessData(null); }}
+                    className="w-full flex items-center gap-3 p-3 bg-amber-50 hover:bg-amber-100 rounded-lg border border-amber-200 transition-colors text-left"
+                  >
+                    <span className="text-xl">👤</span>
+                    <div>
+                      <p className="text-sm font-medium text-amber-800">Cliente Actualizado</p>
+                      <p className="text-xs text-amber-600">Contacto marcado como cliente activo</p>
+                    </div>
+                    <svg className="w-4 h-4 ml-auto text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 pt-3 border-t">
+              <Button variant="outline" onClick={() => setWonSuccessData(null)}>
+                Cerrar
+              </Button>
+              <Button
+                onClick={() => { router.push('/incomes'); setWonSuccessData(null); }}
+                className="bg-green-600 hover:bg-green-700 text-white"
+              >
+                Ir a Ingresos
+              </Button>
+            </div>
+          </div>
+        )}
       </Modal>
     </MainLayout>
   );

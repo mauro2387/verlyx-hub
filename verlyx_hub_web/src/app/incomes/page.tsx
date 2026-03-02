@@ -10,7 +10,7 @@ import { formatCurrency, formatDate } from '@/lib/utils';
 type ViewMode = 'table' | 'cards' | 'stats';
 
 export default function IncomesPage() {
-  const { incomes, isLoading, fetchIncomes, addIncome, updateIncome, deleteIncome, filter, setFilter, getFilteredIncomes, getTotalIncomes } = useIncomesStore();
+  const { incomes, isLoading, fetchIncomes, addIncome, updateIncome, deleteIncome, markIncomePaid, generateRecurringIncomes, filter, setFilter, getFilteredIncomes, getTotalIncomes, getOverdueIncomes } = useIncomesStore();
   const { categories, fetchCategories, getCategoriesByType } = useCategoriesStore();
   const { accounts, fetchAccounts } = useAccountsStore();
   const { clients, fetchClients } = useClientsStore();
@@ -23,6 +23,12 @@ export default function IncomesPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [incomeToDelete, setIncomeToDelete] = useState<Income | null>(null);
   const [showStats, setShowStats] = useState(true);
+  
+  // Payment/receipt dialog
+  const [payDialogOpen, setPayDialogOpen] = useState(false);
+  const [payingIncome, setPayingIncome] = useState<Income | null>(null);
+  const [payFormData, setPayFormData] = useState({ paymentMethod: 'transfer', receiptUrl: '' });
+  const [isPaySubmitting, setIsPaySubmitting] = useState(false);
   
   const [formData, setFormData] = useState({
     description: '',
@@ -50,9 +56,12 @@ export default function IncomesPage() {
     fetchAccounts();
     fetchClients();
     fetchProjects();
-  }, [fetchIncomes, fetchCategories, fetchAccounts, fetchClients, fetchProjects]);
+    // Auto-generate any pending recurring incomes
+    generateRecurringIncomes();
+  }, [fetchIncomes, fetchCategories, fetchAccounts, fetchClients, fetchProjects, generateRecurringIncomes]);
 
   const filteredIncomes = getFilteredIncomes();
+  const overdueIncomes = getOverdueIncomes();
   const incomeCategories = getCategoriesByType('income');
 
   // Estadísticas
@@ -265,6 +274,53 @@ export default function IncomesPage() {
         </div>
       )}
 
+      {/* Overdue Alert Banner */}
+      {overdueIncomes.length > 0 && (
+        <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
+          <div className="flex items-start gap-3">
+            <div className="flex-shrink-0 w-10 h-10 bg-red-100 text-red-600 rounded-full flex items-center justify-center text-lg">
+              ⚠️
+            </div>
+            <div className="flex-1">
+              <h3 className="text-sm font-semibold text-red-800">
+                {overdueIncomes.length} pago{overdueIncomes.length > 1 ? 's' : ''} vencido{overdueIncomes.length > 1 ? 's' : ''} sin cobrar
+              </h3>
+              <p className="text-sm text-red-600 mt-1">
+                Total pendiente vencido: {formatCurrency(overdueIncomes.reduce((s, i) => s + i.amount, 0))}
+              </p>
+              <div className="mt-3 space-y-2 max-h-40 overflow-y-auto">
+                {overdueIncomes.map((income) => {
+                  const daysOverdue = income.dueDate ? Math.floor((Date.now() - new Date(income.dueDate).getTime()) / 86400000) : 0;
+                  return (
+                    <div key={income.id} className="flex items-center justify-between p-2 bg-white rounded border border-red-100">
+                      <div>
+                        <span className="text-sm font-medium text-gray-800">{income.description}</span>
+                        {income.clientName && <span className="text-sm text-gray-500 ml-2">({income.clientName})</span>}
+                        <span className="text-xs text-red-600 ml-2">{daysOverdue} días vencido</span>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="text-sm font-semibold text-red-600">{formatCurrency(income.amount, income.currency)}</span>
+                        <Button
+                          size="sm"
+                          onClick={() => {
+                            setPayingIncome(income);
+                            setPayFormData({ paymentMethod: 'transfer', receiptUrl: '' });
+                            setPayDialogOpen(true);
+                          }}
+                          className="bg-green-600 hover:bg-green-700 text-white text-xs"
+                        >
+                          Marcar Pagado
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Filters */}
       <Card className="mb-6">
         <CardContent>
@@ -358,6 +414,12 @@ export default function IncomesPage() {
                             {income.invoiceNumber && (
                               <div className="text-sm text-gray-500">Fact: {income.invoiceNumber}</div>
                             )}
+                            {income.isRecurring && (
+                              <div className="text-xs text-blue-500 mt-0.5">🔄 Recurrente ({income.recurringFrequency === 'monthly' ? 'Mensual' : income.recurringFrequency === 'quarterly' ? 'Trimestral' : income.recurringFrequency})</div>
+                            )}
+                            {income.isDevelopmentPayment && (
+                              <div className="text-xs text-amber-600 mt-0.5">💻 Pago de desarrollo</div>
+                            )}
                           </td>
                           <td className="py-3 px-4 text-sm">
                             {income.clientName || '-'}
@@ -398,15 +460,25 @@ export default function IncomesPage() {
                                 <Button
                                   variant="outline"
                                   size="sm"
-                                  onClick={async () => {
-                                    await updateIncome(income.id, { 
-                                      status: 'received',
-                                      paymentDate: new Date().toISOString().split('T')[0]
-                                    });
+                                  onClick={() => {
+                                    setPayingIncome(income);
+                                    setPayFormData({ paymentMethod: 'transfer', receiptUrl: '' });
+                                    setPayDialogOpen(true);
                                   }}
                                   title="Marcar como cobrado"
+                                  className="text-green-600 border-green-300 hover:bg-green-50"
                                 >
-                                  ✓
+                                  💰 Cobrar
+                                </Button>
+                              )}
+                              {income.status === 'received' && income.receiptUrl && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => window.open(income.receiptUrl!, '_blank')}
+                                  title="Ver recibo"
+                                >
+                                  🧾
                                 </Button>
                               )}
                               <Button
@@ -769,6 +841,92 @@ export default function IncomesPage() {
         confirmText="Eliminar"
         variant="danger"
       />
+
+      {/* Mark as Paid / Receipt Upload Dialog */}
+      <Modal
+        isOpen={payDialogOpen}
+        onClose={() => { setPayDialogOpen(false); setPayingIncome(null); }}
+        title="Registrar Pago"
+        size="md"
+      >
+        {payingIncome && (
+          <div className="space-y-4">
+            {/* Payment summary */}
+            <div className="p-4 bg-green-50 rounded-lg border border-green-200">
+              <div className="flex justify-between items-center">
+                <div>
+                  <p className="font-medium text-green-800">{payingIncome.description}</p>
+                  {payingIncome.clientName && (
+                    <p className="text-sm text-green-600">Cliente: {payingIncome.clientName}</p>
+                  )}
+                </div>
+                <p className="text-xl font-bold text-green-700">
+                  {formatCurrency(payingIncome.amount, payingIncome.currency)}
+                </p>
+              </div>
+              {payingIncome.dueDate && (
+                <p className="text-sm text-green-600 mt-2">
+                  Vencimiento: {formatDate(payingIncome.dueDate)}
+                  {new Date(payingIncome.dueDate) < new Date() && (
+                    <span className="text-red-600 font-semibold ml-2">
+                      ({Math.floor((Date.now() - new Date(payingIncome.dueDate).getTime()) / 86400000)} días vencido)
+                    </span>
+                  )}
+                </p>
+              )}
+            </div>
+
+            {/* Payment method */}
+            <Select
+              label="Método de Pago"
+              value={payFormData.paymentMethod}
+              onChange={(e) => setPayFormData({ ...payFormData, paymentMethod: e.target.value })}
+              options={[
+                { value: 'transfer', label: '🏦 Transferencia' },
+                { value: 'cash', label: '💵 Efectivo' },
+                { value: 'card', label: '💳 Tarjeta' },
+                { value: 'mercadopago', label: '📱 MercadoPago' },
+                { value: 'check', label: '📝 Cheque' },
+              ]}
+            />
+
+            {/* Receipt upload section */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">🧾 Subir Recibo / Comprobante</label>
+              <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center">
+                <Input
+                  type="url"
+                  placeholder="URL del recibo (Google Drive, Dropbox, etc.)"
+                  value={payFormData.receiptUrl}
+                  onChange={(e) => setPayFormData({ ...payFormData, receiptUrl: e.target.value })}
+                />
+                <p className="text-xs text-gray-500 mt-2">
+                  Pegá el enlace al comprobante de pago (imagen, PDF, etc.)
+                </p>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 pt-4 border-t">
+              <Button variant="outline" onClick={() => { setPayDialogOpen(false); setPayingIncome(null); }}>
+                Cancelar
+              </Button>
+              <Button
+                onClick={async () => {
+                  setIsPaySubmitting(true);
+                  await markIncomePaid(payingIncome.id, payFormData.receiptUrl || null, payFormData.paymentMethod);
+                  setIsPaySubmitting(false);
+                  setPayDialogOpen(false);
+                  setPayingIncome(null);
+                }}
+                disabled={isPaySubmitting}
+                className="bg-green-600 hover:bg-green-700 text-white"
+              >
+                {isPaySubmitting ? 'Procesando...' : '✓ Confirmar Pago'}
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </MainLayout>
   );
 }
