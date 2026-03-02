@@ -136,15 +136,18 @@ export default function OrganizationsPage() {
       if (orgsError) throw orgsError;
       setOrganizations(orgsData || []);
 
-      // Load clients
+      // Load clients (contacts of type 'client')
       const { data: clientsData, error: clientsError } = await supabase
-        .from('companies')
-        .select('id, name')
+        .from('contacts')
+        .select('id, first_name, last_name, company')
         .eq('my_company_id', selectedCompanyId)
-        .order('name');
+        .order('first_name');
 
       if (clientsError) throw clientsError;
-      setClients(clientsData || []);
+      setClients((clientsData || []).map(c => ({
+        id: c.id,
+        name: [c.first_name, c.last_name].filter(Boolean).join(' ') || c.company || 'Sin nombre',
+      })));
     } catch (error) {
       console.error('Error loading data:', error);
     } finally {
