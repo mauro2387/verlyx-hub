@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { ClientProviders } from "@/components/layout/ClientProviders";
 
 export const metadata: Metadata = {
   title: "Verlyx Hub - Gestión Empresarial",
@@ -14,7 +15,9 @@ export default function RootLayout({
   return (
     <html lang="es" suppressHydrationWarning>
       <body className="antialiased bg-gray-50" suppressHydrationWarning>
-        {children}
+        <ClientProviders>
+          {children}
+        </ClientProviders>
       </body>
     </html>
   );

@@ -19,6 +19,7 @@ import {
   mockDocuments,
 } from './mock-data';
 import { auth, db } from './supabase';
+import { onDealStageChanged } from './pipeline';
 
 // ==================== Auth Store ====================
 interface AuthState {
@@ -702,6 +703,9 @@ export const useDealsStore = create<DealsState>((set, get) => ({
     set((state) => ({ deals: state.deals.filter((d) => d.id !== id) }));
   },
   moveDeal: async (dealId, newStage) => {
+    const deal = get().deals.find(d => d.id === dealId);
+    const oldStage = deal?.stage;
+
     await db.deals.update(dealId, { stage: newStage });
     set((state) => ({
       deals: state.deals.map((d) =>
@@ -710,6 +714,13 @@ export const useDealsStore = create<DealsState>((set, get) => ({
           : d
       ),
     }));
+
+    // Trigger pipeline automation for terminal stages
+    if (deal && oldStage && oldStage !== newStage) {
+      const updatedDeal = { ...deal, stage: newStage };
+      // Run pipeline async — don't block the UI
+      onDealStageChanged(updatedDeal, oldStage, newStage).catch(console.error);
+    }
   },
   setFilter: (filter) => {
     set((state) => ({ filter: { ...state.filter, ...filter } }));
