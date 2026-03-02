@@ -2,210 +2,258 @@
 
 import { useEffect, useState, useMemo } from 'react';
 import { MainLayout, PageHeader } from '@/components/layout';
-import { Button, Card, CardContent, Loading, Modal, Input, Textarea, Select, ConfirmDialog, StatCard, Badge, Avatar, SearchInput } from '@/components/ui';
-import { useDealsStore, useClientsStore, useCompanyStore } from '@/lib/store';
-import { Deal, DealStage } from '@/lib/types';
-import { dealStageColors, priorityColors, formatCurrency, formatDate, cn } from '@/lib/utils';
+import { Button, Card, CardContent, Loading, Modal, Input, Textarea, Select, ConfirmDialog, StatCard, Badge, SearchInput } from '@/components/ui';
+import { useOpportunitiesStore, useClientsStore, useCompanyStore } from '@/lib/store';
+import { Opportunity, OpportunityStage } from '@/lib/types';
+import { opportunityStageColors, priorityColors, formatCurrency, cn } from '@/lib/utils';
 
-const DEAL_STAGES: DealStage[] = ['lead', 'qualified', 'proposal', 'negotiation', 'won', 'lost'];
+const OPP_STAGES: OpportunityStage[] = ['qualified', 'proposal', 'negotiation', 'won', 'lost'];
 
 type ViewMode = 'kanban' | 'table' | 'stats';
 
-interface DealFormData {
+interface OppFormData {
   title: string;
   description: string;
-  stage: DealStage;
+  stage: OpportunityStage;
   priority: string;
   clientId: string;
-  amount: string;
   currency: string;
-  probability: string;
-  expectedCloseDate: string;
+  needDetected: string;
   nextAction: string;
+  nextActionDate: string;
+  proposedService: string;
+  proposalSent: boolean;
+  proposalDate: string;
+  estimatedAmountMin: string;
+  estimatedAmountMax: string;
+  tentativeAmount: string;
+  nextInteractionDate: string;
+  finalAmount: string;
+  finalCurrency: string;
+  paymentType: string;
+  startDate: string;
+  wonReason: string;
+  lostReason: string;
+  lostNote: string;
+  probability: string;
   source: string;
-  tags: string[];
+}
+
+const EMPTY_FORM: OppFormData = {
+  title: '',
+  description: '',
+  stage: 'qualified',
+  priority: 'medium',
+  clientId: '',
+  currency: 'UYU',
+  needDetected: '',
+  nextAction: '',
+  nextActionDate: '',
+  proposedService: '',
+  proposalSent: false,
+  proposalDate: '',
+  estimatedAmountMin: '',
+  estimatedAmountMax: '',
+  tentativeAmount: '',
+  nextInteractionDate: '',
+  finalAmount: '',
+  finalCurrency: 'UYU',
+  paymentType: '',
+  startDate: '',
+  wonReason: '',
+  lostReason: '',
+  lostNote: '',
+  probability: '20',
+  source: '',
+};
+
+/** Get the best available amount from an Opportunity for display */
+function getOppAmount(opp: Opportunity): number {
+  if (opp.finalAmount) return opp.finalAmount;
+  if (opp.tentativeAmount) return opp.tentativeAmount;
+  if (opp.estimatedAmountMax) return opp.estimatedAmountMax;
+  if (opp.estimatedAmountMin) return opp.estimatedAmountMin;
+  return 0;
 }
 
 export default function DealsPage() {
-  const { deals, isLoading, fetchDeals, addDeal, updateDeal, deleteDeal, moveDeal, getStageStats } = useDealsStore();
+  const {
+    opportunities, isLoading, fetchOpportunities,
+    createOpportunity, updateOpportunity, deleteOpportunity, changeStage,
+  } = useOpportunitiesStore();
   const { clients, fetchClients } = useClientsStore();
   const { selectedCompanyId } = useCompanyStore();
-  
+
   const [viewMode, setViewMode] = useState<ViewMode>('kanban');
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingDeal, setEditingDeal] = useState<Deal | null>(null);
+  const [editingOpp, setEditingOpp] = useState<Opportunity | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [dealToDelete, setDealToDelete] = useState<Deal | null>(null);
+  const [oppToDelete, setOppToDelete] = useState<Opportunity | null>(null);
   const [showStats, setShowStats] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStage, setFilterStage] = useState<string>('');
   const [filterPriority, setFilterPriority] = useState<string>('');
-  
-  const [formData, setFormData] = useState<DealFormData>({
-    title: '',
-    description: '',
-    stage: 'lead' as DealStage,
-    priority: 'medium',
-    clientId: '',
-    amount: '',
-    currency: 'UYU',
-    probability: '20',
-    expectedCloseDate: '',
-    nextAction: '',
-    source: '',
-    tags: [],
-  });
+
+  const [formData, setFormData] = useState<OppFormData>(EMPTY_FORM);
 
   useEffect(() => {
-    fetchDeals();
+    fetchOpportunities();
     fetchClients();
-  }, [fetchDeals, fetchClients]);
+  }, [fetchOpportunities, fetchClients]);
 
-  // Filtered deals
-  const filteredDeals = useMemo(() => {
-    return deals.filter(deal => {
-      const matchesSearch = !searchTerm || 
-        deal.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        deal.description?.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchesStage = !filterStage || deal.stage === filterStage;
-      const matchesPriority = !filterPriority || deal.priority === filterPriority;
+  const filteredOpps = useMemo(() => {
+    return opportunities.filter(opp => {
+      const matchesSearch = !searchTerm ||
+        opp.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        opp.description?.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesStage = !filterStage || opp.stage === filterStage;
+      const matchesPriority = !filterPriority || opp.priority === filterPriority;
       return matchesSearch && matchesStage && matchesPriority;
     });
-  }, [deals, searchTerm, filterStage, filterPriority]);
+  }, [opportunities, searchTerm, filterStage, filterPriority]);
 
-  // Deal Statistics
-  const dealStats = useMemo(() => {
-    const activeDeals = deals.filter(d => d.isActive);
-    const wonDeals = deals.filter(d => d.stage === 'won');
-    const lostDeals = deals.filter(d => d.stage === 'lost');
-    
+  const oppStats = useMemo(() => {
+    const active = opportunities.filter(o => o.isActive);
+    const won = opportunities.filter(o => o.stage === 'won');
+    const lost = opportunities.filter(o => o.stage === 'lost');
+    const totalValue = active.reduce((s, o) => s + getOppAmount(o), 0);
+    const weightedValue = active.reduce((s, o) => s + (o.expectedRevenue || 0), 0);
+
     return {
-      total: deals.length,
-      active: activeDeals.length,
-      won: wonDeals.length,
-      lost: lostDeals.length,
-      totalValue: activeDeals.reduce((sum, d) => sum + (d.amount || 0), 0),
-      weightedValue: activeDeals.reduce((sum, d) => sum + (d.expectedRevenue || 0), 0),
-      wonValue: wonDeals.reduce((sum, d) => sum + (d.amount || 0), 0),
-      avgDealSize: activeDeals.length > 0 ? activeDeals.reduce((sum, d) => sum + (d.amount || 0), 0) / activeDeals.length : 0,
-      winRate: (wonDeals.length + lostDeals.length) > 0 ? (wonDeals.length / (wonDeals.length + lostDeals.length)) * 100 : 0,
+      total: opportunities.length,
+      active: active.length,
+      won: won.length,
+      lost: lost.length,
+      totalValue,
+      weightedValue,
+      wonValue: won.reduce((s, o) => s + (o.finalAmount || 0), 0),
+      avgDealSize: active.length > 0 ? totalValue / active.length : 0,
+      winRate: (won.length + lost.length) > 0 ? (won.length / (won.length + lost.length)) * 100 : 0,
     };
-  }, [deals]);
+  }, [opportunities]);
 
-  const stageStats = getStageStats();
-  const getDealsByStage = (stage: DealStage) => filteredDeals.filter((d) => d.stage === stage);
+  const stageStats = useMemo(() => {
+    return OPP_STAGES.map(stage => {
+      const stageOpps = opportunities.filter(o => o.stage === stage);
+      return {
+        stage,
+        count: stageOpps.length,
+        value: stageOpps.reduce((s, o) => s + getOppAmount(o), 0),
+      };
+    });
+  }, [opportunities]);
+
+  const getOppsByStage = (stage: OpportunityStage) => filteredOpps.filter(o => o.stage === stage);
+
   const getClientName = (clientId: string | null | undefined) => {
     if (!clientId) return 'Sin cliente';
-    return clients.find((c) => c.id === clientId)?.name || 'Cliente';
+    return clients.find(c => c.id === clientId)?.name || 'Cliente';
   };
 
-  const handleOpenModal = (deal?: Deal) => {
-    if (deal) {
-      setEditingDeal(deal);
+  const handleOpenModal = (opp?: Opportunity) => {
+    if (opp) {
+      setEditingOpp(opp);
       setFormData({
-        title: deal.title,
-        description: deal.description || '',
-        stage: deal.stage,
-        priority: deal.priority || 'medium',
-        clientId: deal.clientId || '',
-        amount: deal.amount?.toString() || '',
-        currency: deal.currency || 'UYU',
-        probability: deal.probability?.toString() || '20',
-        expectedCloseDate: deal.expectedCloseDate?.split('T')[0] || '',
-        nextAction: deal.nextAction || '',
-        source: deal.source || '',
-        tags: [],
+        title: opp.title,
+        description: opp.description || '',
+        stage: opp.stage,
+        priority: opp.priority || 'medium',
+        clientId: opp.clientId || '',
+        currency: opp.currency || 'UYU',
+        needDetected: opp.needDetected || '',
+        nextAction: opp.nextAction || '',
+        nextActionDate: opp.nextActionDate?.split('T')[0] || '',
+        proposedService: opp.proposedService || '',
+        proposalSent: opp.proposalSent || false,
+        proposalDate: opp.proposalDate?.split('T')[0] || '',
+        estimatedAmountMin: opp.estimatedAmountMin?.toString() || '',
+        estimatedAmountMax: opp.estimatedAmountMax?.toString() || '',
+        tentativeAmount: opp.tentativeAmount?.toString() || '',
+        nextInteractionDate: opp.nextInteractionDate?.split('T')[0] || '',
+        finalAmount: opp.finalAmount?.toString() || '',
+        finalCurrency: opp.finalCurrency || 'UYU',
+        paymentType: opp.paymentType || '',
+        startDate: opp.startDate?.split('T')[0] || '',
+        wonReason: opp.wonReason || '',
+        lostReason: opp.lostReason || '',
+        lostNote: opp.lostNote || '',
+        probability: opp.probability?.toString() || '20',
+        source: opp.source || '',
       });
     } else {
-      setEditingDeal(null);
-      setFormData({
-        title: '',
-        description: '',
-        stage: 'lead',
-        priority: 'medium',
-        clientId: '',
-        amount: '',
-        currency: 'UYU',
-        probability: '20',
-        expectedCloseDate: '',
-        nextAction: '',
-        source: '',
-        tags: [],
-      });
+      setEditingOpp(null);
+      setFormData(EMPTY_FORM);
     }
     setIsModalOpen(true);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.title.trim()) return;
 
-    const amount = formData.amount ? parseFloat(formData.amount) : 0;
-    const probability = parseInt(formData.probability) || 0;
-
-    const dealData = {
-      myCompanyId: selectedCompanyId || '1',
-      clientId: formData.clientId || undefined,
-      organizationId: null,
+    const oppData: Partial<Opportunity> = {
       title: formData.title,
       description: formData.description || null,
       stage: formData.stage,
-      priority: formData.priority as 'low' | 'medium' | 'high' | 'urgent',
-      amount,
+      priority: formData.priority as Opportunity['priority'],
+      clientId: formData.clientId || null,
       currency: formData.currency,
-      probability,
-      expectedRevenue: amount * (probability / 100),
-      expectedCloseDate: formData.expectedCloseDate || null,
-      actualCloseDate: null,
-      lostReason: null,
-      wonReason: null,
+      needDetected: formData.needDetected || null,
+      nextAction: formData.nextAction || 'Contactar',
+      nextActionDate: formData.nextActionDate || new Date().toISOString().split('T')[0],
+      proposedService: formData.proposedService || null,
+      proposalSent: formData.proposalSent,
+      proposalDate: formData.proposalDate || null,
+      estimatedAmountMin: formData.estimatedAmountMin ? parseFloat(formData.estimatedAmountMin) : null,
+      estimatedAmountMax: formData.estimatedAmountMax ? parseFloat(formData.estimatedAmountMax) : null,
+      tentativeAmount: formData.tentativeAmount ? parseFloat(formData.tentativeAmount) : null,
+      finalAmount: formData.finalAmount ? parseFloat(formData.finalAmount) : null,
+      finalCurrency: formData.finalCurrency || null,
+      paymentType: (formData.paymentType || null) as Opportunity['paymentType'],
+      startDate: formData.startDate || null,
+      wonReason: formData.wonReason || null,
+      lostReason: formData.lostReason || null,
+      lostNote: formData.lostNote || null,
       source: formData.source || null,
-      daysInStage: 0,
-      nextAction: formData.nextAction || null,
-      nextActionDate: null,
       isActive: !['won', 'lost'].includes(formData.stage),
     };
 
-    if (editingDeal) {
-      updateDeal(editingDeal.id, dealData);
+    if (editingOpp) {
+      await updateOpportunity(editingOpp.id, oppData);
     } else {
-      addDeal(dealData);
+      await createOpportunity(oppData);
     }
     setIsModalOpen(false);
   };
 
-  const handleDeleteClick = (deal: Deal) => {
-    setDealToDelete(deal);
+  const handleDeleteClick = (opp: Opportunity) => {
+    setOppToDelete(opp);
     setDeleteDialogOpen(true);
   };
 
-  const handleDeleteConfirm = () => {
-    if (dealToDelete) {
-      deleteDeal(dealToDelete.id);
+  const handleDeleteConfirm = async () => {
+    if (oppToDelete) {
+      await deleteOpportunity(oppToDelete.id);
       setDeleteDialogOpen(false);
-      setDealToDelete(null);
+      setOppToDelete(null);
     }
   };
 
-  const handleDragStart = (e: React.DragEvent, dealId: string) => {
-    e.dataTransfer.setData('dealId', dealId);
+  const handleDragStart = (e: React.DragEvent, oppId: string) => {
+    e.dataTransfer.setData('oppId', oppId);
   };
 
-  const handleDrop = (e: React.DragEvent, newStage: DealStage) => {
+  const handleDrop = async (e: React.DragEvent, newStage: OpportunityStage) => {
     e.preventDefault();
-    const dealId = e.dataTransfer.getData('dealId');
-    if (dealId) {
-      moveDeal(dealId, newStage);
+    const oppId = e.dataTransfer.getData('oppId');
+    if (oppId) {
+      await changeStage(oppId, newStage, {});
     }
   };
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
   };
-
-  // Calculate pipeline totals
-  const pipelineTotal = deals.filter(d => d.isActive).reduce((sum, d) => sum + (d.amount || 0), 0);
-  const weightedTotal = deals.filter(d => d.isActive).reduce((sum, d) => sum + (d.expectedRevenue || 0), 0);
 
   if (isLoading) {
     return (
@@ -219,10 +267,9 @@ export default function DealsPage() {
     <MainLayout>
       <PageHeader
         title="Oportunidades"
-        description={`${deals.length} oportunidades en el pipeline`}
+        description={`${opportunities.length} oportunidades en el pipeline`}
         actions={
           <div className="flex items-center gap-3">
-            {/* View Mode Toggle */}
             <div className="flex border border-gray-200 rounded-lg overflow-hidden">
               <button
                 onClick={() => setViewMode('kanban')}
@@ -290,7 +337,7 @@ export default function DealsPage() {
               onChange={(e) => setFilterStage(e.target.value)}
               options={[
                 { value: '', label: 'Todas las etapas' },
-                ...DEAL_STAGES.map(s => ({ value: s, label: dealStageColors[s]?.label || s })),
+                ...OPP_STAGES.map(s => ({ value: s, label: opportunityStageColors[s]?.label || s })),
               ]}
             />
             <Select
@@ -317,7 +364,7 @@ export default function DealsPage() {
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
           <StatCard
             title="Total"
-            value={dealStats.total}
+            value={oppStats.total}
             color="indigo"
             icon={
               <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -327,7 +374,7 @@ export default function DealsPage() {
           />
           <StatCard
             title="Activas"
-            value={dealStats.active}
+            value={oppStats.active}
             color="blue"
             icon={
               <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -337,7 +384,7 @@ export default function DealsPage() {
           />
           <StatCard
             title="Ganadas"
-            value={dealStats.won}
+            value={oppStats.won}
             color="green"
             icon={
               <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -347,7 +394,7 @@ export default function DealsPage() {
           />
           <StatCard
             title="Perdidas"
-            value={dealStats.lost}
+            value={oppStats.lost}
             color="red"
             icon={
               <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -357,7 +404,7 @@ export default function DealsPage() {
           />
           <StatCard
             title="Valor Pipeline"
-            value={formatCurrency(dealStats.totalValue)}
+            value={formatCurrency(oppStats.totalValue)}
             color="purple"
             icon={
               <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -367,7 +414,7 @@ export default function DealsPage() {
           />
           <StatCard
             title="Tasa de Éxito"
-            value={`${dealStats.winRate.toFixed(1)}%`}
+            value={`${oppStats.winRate.toFixed(1)}%`}
             color="orange"
             icon={
               <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -381,10 +428,10 @@ export default function DealsPage() {
       {/* Kanban View */}
       {viewMode === 'kanban' && (
         <div className="flex gap-4 overflow-x-auto pb-6">
-          {DEAL_STAGES.map((stage) => {
+          {OPP_STAGES.map((stage) => {
             const stageStat = stageStats.find(s => s.stage === stage);
-            const stageDeals = getDealsByStage(stage);
-            
+            const stageOpps = getOppsByStage(stage);
+
             return (
               <div
                 key={stage}
@@ -392,100 +439,123 @@ export default function DealsPage() {
                 onDrop={(e) => handleDrop(e, stage)}
                 onDragOver={handleDragOver}
               >
-                <div 
+                <div
                   className="rounded-t-lg px-4 py-3"
-                  style={{ backgroundColor: `${dealStageColors[stage]?.color}20` }}
+                  style={{ backgroundColor: `${opportunityStageColors[stage]?.color}20` }}
                 >
                   <div className="flex items-center justify-between">
-                    <h3 className="font-semibold" style={{ color: dealStageColors[stage]?.color }}>
-                      {dealStageColors[stage]?.label}
-                  </h3>
-                  <span className="text-sm font-medium bg-white px-2 py-0.5 rounded-full shadow-sm">
-                    {stageDeals.length}
-                  </span>
+                    <h3 className="font-semibold" style={{ color: opportunityStageColors[stage]?.color }}>
+                      {opportunityStageColors[stage]?.label}
+                    </h3>
+                    <span className="text-sm font-medium bg-white px-2 py-0.5 rounded-full shadow-sm">
+                      {stageOpps.length}
+                    </span>
+                  </div>
+                  <p className="text-sm mt-1" style={{ color: opportunityStageColors[stage]?.color }}>
+                    {formatCurrency(stageStat?.value || 0)}
+                  </p>
                 </div>
-                <p className="text-sm mt-1" style={{ color: dealStageColors[stage]?.color }}>
-                  {formatCurrency(stageStat?.value || 0)}
-                </p>
-              </div>
-              <div className="bg-gray-100/50 rounded-b-lg p-3 min-h-[400px] space-y-3">
-                {stageDeals.length === 0 ? (
-                  <p className="text-center text-gray-400 py-8 text-sm">Sin oportunidades</p>
-                ) : (
-                  stageDeals.map((deal) => (
-                    <div
-                      key={deal.id}
-                      draggable
-                      onDragStart={(e) => handleDragStart(e, deal.id)}
-                      className="bg-white rounded-lg shadow-sm p-4 cursor-move hover:shadow-md transition-shadow"
-                    >
-                      <div className="flex items-start justify-between mb-2">
-                        <h4 className="font-medium text-gray-900 text-sm">{deal.title}</h4>
-                        <div className="flex gap-1">
-                          <button
-                            onClick={() => handleOpenModal(deal)}
-                            className="p-1 hover:bg-gray-100 rounded"
-                          >
-                            <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                            </svg>
-                          </button>
-                          <button
-                            onClick={() => handleDeleteClick(deal)}
-                            className="p-1 hover:bg-red-50 rounded"
-                          >
-                            <svg className="w-4 h-4 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                            </svg>
-                          </button>
-                        </div>
-                      </div>
-                      
-                      <p className="text-xs text-gray-500 mb-3">{getClientName(deal.clientId)}</p>
-                      
-                      <div className="flex items-center justify-between mb-3">
-                        <span className="text-lg font-bold text-gray-900">{formatCurrency(deal.amount || 0)}</span>
-                        <span className={cn(
-                          'px-2 py-0.5 text-xs font-medium rounded-full',
-                          priorityColors[deal.priority || 'medium']?.bg,
-                          priorityColors[deal.priority || 'medium']?.text
-                        )}>
-                          {priorityColors[deal.priority || 'medium']?.label}
-                        </span>
-                      </div>
-                      
-                      <div className="flex items-center justify-between text-xs">
-                        <div className="flex items-center gap-2">
-                          <div className="w-16 h-1.5 bg-gray-200 rounded-full overflow-hidden">
-                            <div 
-                              className="h-full bg-indigo-600 rounded-full" 
-                              style={{ width: `${deal.probability || 0}%` }}
-                            />
+                <div className="bg-gray-100/50 rounded-b-lg p-3 min-h-[400px] space-y-3">
+                  {stageOpps.length === 0 ? (
+                    <p className="text-center text-gray-400 py-8 text-sm">Sin oportunidades</p>
+                  ) : (
+                    stageOpps.map((opp) => (
+                      <div
+                        key={opp.id}
+                        draggable
+                        onDragStart={(e) => handleDragStart(e, opp.id)}
+                        className="bg-white rounded-lg shadow-sm p-4 cursor-move hover:shadow-md transition-shadow"
+                      >
+                        <div className="flex items-start justify-between mb-2">
+                          <h4 className="font-medium text-gray-900 text-sm">{opp.title}</h4>
+                          <div className="flex gap-1">
+                            <button
+                              onClick={() => handleOpenModal(opp)}
+                              className="p-1 hover:bg-gray-100 rounded"
+                            >
+                              <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                              </svg>
+                            </button>
+                            <button
+                              onClick={() => handleDeleteClick(opp)}
+                              className="p-1 hover:bg-red-50 rounded"
+                            >
+                              <svg className="w-4 h-4 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                              </svg>
+                            </button>
                           </div>
-                          <span className="text-gray-500">{deal.probability}%</span>
                         </div>
-                        {deal.daysInStage !== undefined && deal.daysInStage > 0 && (
-                          <span className="text-gray-400">{deal.daysInStage}d</span>
+
+                        <p className="text-xs text-gray-500 mb-3">{getClientName(opp.clientId)}</p>
+
+                        <div className="flex items-center justify-between mb-3">
+                          <span className="text-lg font-bold text-gray-900">{formatCurrency(getOppAmount(opp))}</span>
+                          <span className={cn(
+                            'px-2 py-0.5 text-xs font-medium rounded-full',
+                            priorityColors[opp.priority || 'medium']?.bg,
+                            priorityColors[opp.priority || 'medium']?.text
+                          )}>
+                            {priorityColors[opp.priority || 'medium']?.label}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center justify-between text-xs">
+                          <div className="flex items-center gap-2">
+                            <div className="w-16 h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                              <div
+                                className="h-full bg-indigo-600 rounded-full"
+                                style={{ width: `${opp.probability || 0}%` }}
+                              />
+                            </div>
+                            <span className="text-gray-500">{opp.probability}%</span>
+                          </div>
+                          {opp.daysInStage > 0 && (
+                            <span className="text-gray-400">{opp.daysInStage}d</span>
+                          )}
+                        </div>
+
+                        {opp.stage === 'qualified' && opp.nextAction && (
+                          <div className="mt-3 pt-3 border-t border-gray-100">
+                            <p className="text-xs text-gray-500 flex items-center gap-1">
+                              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 9l3 3m0 0l-3 3m3-3H8m13 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+                              </svg>
+                              {opp.nextAction}
+                            </p>
+                          </div>
+                        )}
+                        {opp.stage === 'proposal' && opp.proposedService && (
+                          <div className="mt-3 pt-3 border-t border-gray-100">
+                            <p className="text-xs text-indigo-600 font-medium">{opp.proposedService}</p>
+                            {opp.proposalSent && (
+                              <span className="mt-1 inline-block text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded">Propuesta enviada</span>
+                            )}
+                          </div>
+                        )}
+                        {opp.stage === 'negotiation' && opp.tentativeAmount && (
+                          <div className="mt-3 pt-3 border-t border-gray-100">
+                            <p className="text-xs text-purple-600">Monto tentativo: {formatCurrency(opp.tentativeAmount)}</p>
+                          </div>
+                        )}
+                        {opp.stage === 'won' && opp.wonReason && (
+                          <div className="mt-3 pt-3 border-t border-gray-100">
+                            <p className="text-xs text-green-600">{opp.wonReason}</p>
+                          </div>
+                        )}
+                        {opp.stage === 'lost' && opp.lostReason && (
+                          <div className="mt-3 pt-3 border-t border-gray-100">
+                            <p className="text-xs text-red-600">{opp.lostReason}</p>
+                          </div>
                         )}
                       </div>
-                      
-                      {deal.nextAction && (
-                        <div className="mt-3 pt-3 border-t border-gray-100">
-                          <p className="text-xs text-gray-500 flex items-center gap-1">
-                            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 9l3 3m0 0l-3 3m3-3H8m13 0a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
-                            {deal.nextAction}
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  ))
-                )}
+                    ))
+                  )}
+                </div>
               </div>
-            </div>
-          );
-        })}
+            );
+          })}
         </div>
       )}
 
@@ -496,89 +566,71 @@ export default function DealsPage() {
             <table className="w-full">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Oportunidad
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Cliente
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Etapa
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Prioridad
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Monto
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Probabilidad
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Valor Esperado
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Fecha Cierre
-                  </th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Acciones
-                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Oportunidad</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cliente</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Etapa</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Prioridad</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Monto</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Probabilidad</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Días en Etapa</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Próxima Acción</th>
+                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Acciones</th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {filteredDeals.map((deal) => (
-                  <tr key={deal.id} className="hover:bg-gray-50 transition-colors">
+                {filteredOpps.map((opp) => (
+                  <tr key={opp.id} className="hover:bg-gray-50 transition-colors">
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="font-medium text-gray-900">{deal.title}</div>
-                      {deal.description && (
-                        <div className="text-sm text-gray-500 truncate max-w-xs">{deal.description}</div>
+                      <div className="font-medium text-gray-900">{opp.title}</div>
+                      {opp.description && (
+                        <div className="text-sm text-gray-500 truncate max-w-xs">{opp.description}</div>
                       )}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {getClientName(deal.clientId)}
+                      {getClientName(opp.clientId)}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <Badge variant={deal.stage === 'won' ? 'success' : deal.stage === 'lost' ? 'danger' : 'default'}>
-                        {dealStageColors[deal.stage]?.label || deal.stage}
+                      <Badge variant={opp.stage === 'won' ? 'success' : opp.stage === 'lost' ? 'danger' : 'default'}>
+                        {opportunityStageColors[opp.stage]?.label || opp.stage}
                       </Badge>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span className={cn(
                         'px-2 py-0.5 text-xs font-medium rounded-full',
-                        priorityColors[deal.priority || 'medium']?.bg,
-                        priorityColors[deal.priority || 'medium']?.text
+                        priorityColors[opp.priority || 'medium']?.bg,
+                        priorityColors[opp.priority || 'medium']?.text
                       )}>
-                        {priorityColors[deal.priority || 'medium']?.label}
+                        {priorityColors[opp.priority || 'medium']?.label}
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                      {formatCurrency(deal.amount || 0)}
+                      {formatCurrency(getOppAmount(opp))}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center gap-2">
                         <div className="w-24 h-2 bg-gray-200 rounded-full overflow-hidden">
-                          <div 
-                            className="h-full bg-indigo-600 rounded-full" 
-                            style={{ width: `${deal.probability || 0}%` }}
+                          <div
+                            className="h-full bg-indigo-600 rounded-full"
+                            style={{ width: `${opp.probability || 0}%` }}
                           />
                         </div>
-                        <span className="text-xs text-gray-500">{deal.probability}%</span>
+                        <span className="text-xs text-gray-500">{opp.probability}%</span>
                       </div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-indigo-600">
-                      {formatCurrency(deal.expectedRevenue || 0)}
-                    </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {deal.expectedCloseDate ? formatDate(deal.expectedCloseDate) : '-'}
+                      {opp.daysInStage > 0 ? `${opp.daysInStage} días` : '-'}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 max-w-[200px] truncate">
+                      {opp.nextAction || '-'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
                       <div className="flex items-center justify-end gap-2">
-                        <Button variant="ghost" size="sm" onClick={() => handleOpenModal(deal)}>
+                        <Button variant="ghost" size="sm" onClick={() => handleOpenModal(opp)}>
                           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                           </svg>
                         </Button>
-                        <Button variant="ghost" size="sm" onClick={() => handleDeleteClick(deal)}>
+                        <Button variant="ghost" size="sm" onClick={() => handleDeleteClick(opp)}>
                           <svg className="w-4 h-4 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                           </svg>
@@ -596,29 +648,28 @@ export default function DealsPage() {
       {/* Stats View */}
       {viewMode === 'stats' && (
         <div className="space-y-6">
-          {/* Top Deals by Value */}
           <Card>
             <CardContent>
               <h3 className="text-lg font-semibold text-gray-900 mb-4">Top Oportunidades por Valor</h3>
               <div className="space-y-3">
-                {filteredDeals
-                  .filter(d => d.isActive)
-                  .sort((a, b) => (b.amount || 0) - (a.amount || 0))
+                {filteredOpps
+                  .filter(o => o.isActive)
+                  .sort((a, b) => getOppAmount(b) - getOppAmount(a))
                   .slice(0, 10)
-                  .map((deal, index) => (
-                    <div key={deal.id} className="flex items-center gap-4 p-3 rounded-lg hover:bg-gray-50 transition-colors">
+                  .map((opp, index) => (
+                    <div key={opp.id} className="flex items-center gap-4 p-3 rounded-lg hover:bg-gray-50 transition-colors">
                       <div className="flex items-center justify-center w-8 h-8 bg-indigo-100 text-indigo-600 rounded-full font-bold text-sm">
                         {index + 1}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <div className="font-medium text-gray-900">{deal.title}</div>
+                        <div className="font-medium text-gray-900">{opp.title}</div>
                         <div className="text-sm text-gray-500">
-                          {getClientName(deal.clientId)} • {dealStageColors[deal.stage]?.label}
+                          {getClientName(opp.clientId)} • {opportunityStageColors[opp.stage]?.label}
                         </div>
                       </div>
                       <div className="text-right">
-                        <div className="font-bold text-indigo-600">{formatCurrency(deal.amount || 0)}</div>
-                        <div className="text-xs text-gray-500">{deal.probability}% prob.</div>
+                        <div className="font-bold text-indigo-600">{formatCurrency(getOppAmount(opp))}</div>
+                        <div className="text-xs text-gray-500">{opp.probability}% prob.</div>
                       </div>
                     </div>
                   ))}
@@ -626,19 +677,18 @@ export default function DealsPage() {
             </CardContent>
           </Card>
 
-          {/* Pipeline Analysis */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <Card>
               <CardContent>
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">Distribución por Etapa</h3>
                 <div className="space-y-4">
                   {stageStats.map(stat => {
-                    const percentage = dealStats.totalValue > 0 ? (stat.value / dealStats.totalValue) * 100 : 0;
+                    const percentage = oppStats.totalValue > 0 ? (stat.value / oppStats.totalValue) * 100 : 0;
                     return (
                       <div key={stat.stage}>
                         <div className="flex items-center justify-between mb-2">
-                          <span className="text-sm font-medium" style={{ color: dealStageColors[stat.stage]?.color }}>
-                            {dealStageColors[stat.stage]?.label}
+                          <span className="text-sm font-medium" style={{ color: opportunityStageColors[stat.stage]?.color }}>
+                            {opportunityStageColors[stat.stage]?.label}
                           </span>
                           <span className="text-sm text-gray-500">
                             {stat.count} ({percentage.toFixed(1)}%)
@@ -647,9 +697,9 @@ export default function DealsPage() {
                         <div className="w-full bg-gray-200 rounded-full h-2">
                           <div
                             className="h-2 rounded-full"
-                            style={{ 
+                            style={{
                               width: `${percentage}%`,
-                              backgroundColor: dealStageColors[stat.stage]?.color
+                              backgroundColor: opportunityStageColors[stat.stage]?.color,
                             }}
                           />
                         </div>
@@ -667,19 +717,19 @@ export default function DealsPage() {
                 <div className="space-y-4">
                   <div className="p-4 bg-gradient-to-r from-indigo-50 to-purple-50 rounded-lg">
                     <div className="text-sm text-indigo-600 font-medium mb-1">Valor Total del Pipeline</div>
-                    <div className="text-2xl font-bold text-gray-900">{formatCurrency(dealStats.totalValue)}</div>
+                    <div className="text-2xl font-bold text-gray-900">{formatCurrency(oppStats.totalValue)}</div>
                   </div>
                   <div className="p-4 bg-gradient-to-r from-blue-50 to-cyan-50 rounded-lg">
                     <div className="text-sm text-blue-600 font-medium mb-1">Valor Ponderado</div>
-                    <div className="text-2xl font-bold text-gray-900">{formatCurrency(dealStats.weightedValue)}</div>
+                    <div className="text-2xl font-bold text-gray-900">{formatCurrency(oppStats.weightedValue)}</div>
                   </div>
                   <div className="p-4 bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg">
                     <div className="text-sm text-green-600 font-medium mb-1">Ingresos Ganados</div>
-                    <div className="text-2xl font-bold text-gray-900">{formatCurrency(dealStats.wonValue)}</div>
+                    <div className="text-2xl font-bold text-gray-900">{formatCurrency(oppStats.wonValue)}</div>
                   </div>
                   <div className="p-4 bg-gradient-to-r from-orange-50 to-amber-50 rounded-lg">
-                    <div className="text-sm text-orange-600 font-medium mb-1">Deal Promedio</div>
-                    <div className="text-2xl font-bold text-gray-900">{formatCurrency(dealStats.avgDealSize)}</div>
+                    <div className="text-sm text-orange-600 font-medium mb-1">Oportunidad Promedio</div>
+                    <div className="text-2xl font-bold text-gray-900">{formatCurrency(oppStats.avgDealSize)}</div>
                   </div>
                 </div>
               </CardContent>
@@ -688,15 +738,14 @@ export default function DealsPage() {
         </div>
       )}
 
-      {/* Deal Modal */}
+      {/* Opportunity Modal */}
       <Modal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
-        title={editingDeal ? 'Editar Oportunidad' : 'Nueva Oportunidad'}
+        title={editingOpp ? 'Editar Oportunidad' : 'Nueva Oportunidad'}
         size="lg"
       >
         <form onSubmit={handleSubmit} className="space-y-6">
-          {/* Basic Information */}
           <div>
             <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -721,7 +770,6 @@ export default function DealsPage() {
             </div>
           </div>
 
-          {/* Stage & Priority */}
           <div>
             <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -733,8 +781,8 @@ export default function DealsPage() {
               <Select
                 label="Etapa"
                 value={formData.stage}
-                onChange={(e) => setFormData({ ...formData, stage: e.target.value as DealStage })}
-                options={DEAL_STAGES.map(s => ({ value: s, label: dealStageColors[s]?.label || s }))}
+                onChange={(e) => setFormData({ ...formData, stage: e.target.value as OpportunityStage })}
+                options={OPP_STAGES.map(s => ({ value: s, label: opportunityStageColors[s]?.label || s }))}
               />
               <Select
                 label="Prioridad"
@@ -750,7 +798,6 @@ export default function DealsPage() {
             </div>
           </div>
 
-          {/* Client & Source */}
           <div>
             <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -783,92 +830,262 @@ export default function DealsPage() {
                   { value: 'cold_call', label: 'Llamada Fría' },
                   { value: 'event', label: 'Evento' },
                   { value: 'partner', label: 'Socio' },
+                  { value: 'prospecting', label: 'Prospección' },
                   { value: 'other', label: 'Otro' },
                 ]}
               />
             </div>
           </div>
 
-          {/* Financial Details */}
-          <div>
-            <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-              Información Financiera
-            </h3>
-            <div className="grid grid-cols-3 gap-4">
-              <div className="col-span-2">
+          {/* Stage-specific: Qualified */}
+          {formData.stage === 'qualified' && (
+            <div>
+              <h3 className="text-sm font-semibold text-blue-700 mb-3 flex items-center gap-2">
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                Calificación
+              </h3>
+              <div className="space-y-4">
+                <Textarea
+                  label="Necesidad Detectada"
+                  placeholder="¿Qué necesita el cliente?"
+                  rows={2}
+                  value={formData.needDetected}
+                  onChange={(e) => setFormData({ ...formData, needDetected: e.target.value })}
+                />
+                <div className="grid grid-cols-2 gap-4">
+                  <Input
+                    label="Próxima Acción"
+                    placeholder="Ej: Llamar, enviar info..."
+                    value={formData.nextAction}
+                    onChange={(e) => setFormData({ ...formData, nextAction: e.target.value })}
+                  />
+                  <Input
+                    label="Fecha Próxima Acción"
+                    type="date"
+                    value={formData.nextActionDate}
+                    onChange={(e) => setFormData({ ...formData, nextActionDate: e.target.value })}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Stage-specific: Proposal */}
+          {formData.stage === 'proposal' && (
+            <div>
+              <h3 className="text-sm font-semibold text-indigo-700 mb-3 flex items-center gap-2">
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                Propuesta
+              </h3>
+              <div className="space-y-4">
                 <Input
-                  label="Monto"
-                  type="number"
-                  placeholder="0"
-                  value={formData.amount}
-                  onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
+                  label="Servicio Propuesto"
+                  placeholder="¿Qué servicio/producto ofreces?"
+                  value={formData.proposedService}
+                  onChange={(e) => setFormData({ ...formData, proposedService: e.target.value })}
+                />
+                <div className="grid grid-cols-3 gap-4">
+                  <Input
+                    label="Monto Mínimo"
+                    type="number"
+                    placeholder="0"
+                    value={formData.estimatedAmountMin}
+                    onChange={(e) => setFormData({ ...formData, estimatedAmountMin: e.target.value })}
+                  />
+                  <Input
+                    label="Monto Máximo"
+                    type="number"
+                    placeholder="0"
+                    value={formData.estimatedAmountMax}
+                    onChange={(e) => setFormData({ ...formData, estimatedAmountMax: e.target.value })}
+                  />
+                  <Select
+                    label="Moneda"
+                    value={formData.currency}
+                    onChange={(e) => setFormData({ ...formData, currency: e.target.value })}
+                    options={[
+                      { value: 'UYU', label: 'UYU ($)' },
+                      { value: 'USD', label: 'USD ($)' },
+                      { value: 'EUR', label: 'EUR (€)' },
+                      { value: 'BRL', label: 'BRL (R$)' },
+                      { value: 'ARS', label: 'ARS ($)' },
+                    ]}
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <Input
+                    label="Fecha Propuesta"
+                    type="date"
+                    value={formData.proposalDate}
+                    onChange={(e) => setFormData({ ...formData, proposalDate: e.target.value })}
+                  />
+                  <div className="flex items-end pb-1">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={formData.proposalSent}
+                        onChange={(e) => setFormData({ ...formData, proposalSent: e.target.checked })}
+                        className="w-4 h-4 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500"
+                      />
+                      <span className="text-sm font-medium text-gray-700">Propuesta Enviada</span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Stage-specific: Negotiation */}
+          {formData.stage === 'negotiation' && (
+            <div>
+              <h3 className="text-sm font-semibold text-purple-700 mb-3 flex items-center gap-2">
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                </svg>
+                Negociación
+              </h3>
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <Input
+                    label="Monto Tentativo"
+                    type="number"
+                    placeholder="0"
+                    value={formData.tentativeAmount}
+                    onChange={(e) => setFormData({ ...formData, tentativeAmount: e.target.value })}
+                  />
+                  <Input
+                    label="Fecha Próximo Contacto"
+                    type="date"
+                    value={formData.nextInteractionDate}
+                    onChange={(e) => setFormData({ ...formData, nextInteractionDate: e.target.value })}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Stage-specific: Won */}
+          {formData.stage === 'won' && (
+            <div>
+              <h3 className="text-sm font-semibold text-green-700 mb-3 flex items-center gap-2">
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                Cierre Ganado
+              </h3>
+              <div className="space-y-4">
+                <div className="grid grid-cols-3 gap-4">
+                  <Input
+                    label="Monto Final"
+                    type="number"
+                    placeholder="0"
+                    value={formData.finalAmount}
+                    onChange={(e) => setFormData({ ...formData, finalAmount: e.target.value })}
+                  />
+                  <Select
+                    label="Moneda Final"
+                    value={formData.finalCurrency}
+                    onChange={(e) => setFormData({ ...formData, finalCurrency: e.target.value })}
+                    options={[
+                      { value: 'UYU', label: 'UYU ($)' },
+                      { value: 'USD', label: 'USD ($)' },
+                      { value: 'EUR', label: 'EUR (€)' },
+                    ]}
+                  />
+                  <Select
+                    label="Tipo de Pago"
+                    value={formData.paymentType}
+                    onChange={(e) => setFormData({ ...formData, paymentType: e.target.value })}
+                    options={[
+                      { value: '', label: 'Seleccionar...' },
+                      { value: 'one_time', label: 'Pago Único' },
+                      { value: 'monthly', label: 'Mensual' },
+                      { value: 'quarterly', label: 'Trimestral' },
+                      { value: 'annual', label: 'Anual' },
+                      { value: 'milestone', label: 'Por Hito' },
+                      { value: 'custom', label: 'Personalizado' },
+                    ]}
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <Input
+                    label="Fecha de Inicio"
+                    type="date"
+                    value={formData.startDate}
+                    onChange={(e) => setFormData({ ...formData, startDate: e.target.value })}
+                  />
+                  <Input
+                    label="Razón de Éxito"
+                    placeholder="¿Por qué se ganó?"
+                    value={formData.wonReason}
+                    onChange={(e) => setFormData({ ...formData, wonReason: e.target.value })}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Stage-specific: Lost */}
+          {formData.stage === 'lost' && (
+            <div>
+              <h3 className="text-sm font-semibold text-red-700 mb-3 flex items-center gap-2">
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                Motivo de Pérdida
+              </h3>
+              <div className="space-y-4">
+                <Select
+                  label="Razón"
+                  value={formData.lostReason}
+                  onChange={(e) => setFormData({ ...formData, lostReason: e.target.value })}
+                  options={[
+                    { value: '', label: 'Seleccionar motivo...' },
+                    { value: 'price_too_high', label: 'Precio muy alto' },
+                    { value: 'budget_not_approved', label: 'Presupuesto no aprobado' },
+                    { value: 'timing_not_right', label: 'Timing inadecuado' },
+                    { value: 'competitor_preferred', label: 'Prefirió competidor' },
+                    { value: 'feature_missing', label: 'Falta funcionalidad' },
+                    { value: 'decision_maker_unavailable', label: 'Decisor no disponible' },
+                    { value: 'internal_priority_change', label: 'Cambio de prioridad interna' },
+                    { value: 'contract_terms', label: 'Términos contractuales' },
+                    { value: 'other', label: 'Otro' },
+                  ]}
+                />
+                <Textarea
+                  label="Notas"
+                  placeholder="Detalle adicional sobre la pérdida..."
+                  rows={2}
+                  value={formData.lostNote}
+                  onChange={(e) => setFormData({ ...formData, lostNote: e.target.value })}
                 />
               </div>
-              <Select
-                label="Moneda"
-                value={formData.currency}
-                onChange={(e) => setFormData({ ...formData, currency: e.target.value })}
-                options={[
-                  { value: 'UYU', label: 'UYU ($)' },
-                  { value: 'USD', label: 'USD ($)' },
-                  { value: 'EUR', label: 'EUR (€)' },
-                  { value: 'BRL', label: 'BRL (R$)' },
-                  { value: 'ARS', label: 'ARS ($)' },
-                ]}
-              />
             </div>
-            <div className="mt-4">
-              <Input
-                label="Probabilidad de Cierre (%)"
-                type="number"
-                placeholder="0-100"
-                min="0"
-                max="100"
-                value={formData.probability}
-                onChange={(e) => setFormData({ ...formData, probability: e.target.value })}
-              />
-              {formData.amount && formData.probability && (
-                <p className="text-xs text-gray-500 mt-1">
-                  Valor Esperado: {formatCurrency(parseFloat(formData.amount) * (parseInt(formData.probability) / 100))}
-                </p>
-              )}
-            </div>
-          </div>
+          )}
 
-          {/* Timeline & Actions */}
+          {/* Probability */}
           <div>
-            <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-              </svg>
-              Fechas y Próximos Pasos
-            </h3>
-            <div className="space-y-4">
-              <Input
-                label="Fecha Esperada de Cierre"
-                type="date"
-                value={formData.expectedCloseDate}
-                onChange={(e) => setFormData({ ...formData, expectedCloseDate: e.target.value })}
-              />
-              <Input
-                label="Próxima Acción"
-                placeholder="¿Qué sigue? Ej: Llamar al cliente, Enviar propuesta..."
-                value={formData.nextAction}
-                onChange={(e) => setFormData({ ...formData, nextAction: e.target.value })}
-              />
-            </div>
+            <Input
+              label="Probabilidad de Cierre (%)"
+              type="number"
+              placeholder="0-100"
+              min="0"
+              max="100"
+              value={formData.probability}
+              onChange={(e) => setFormData({ ...formData, probability: e.target.value })}
+            />
           </div>
 
-          {/* Actions */}
           <div className="flex justify-end gap-3 pt-4 border-t">
             <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)}>
               Cancelar
             </Button>
             <Button type="submit">
-              {editingDeal ? 'Guardar Cambios' : 'Crear Oportunidad'}
+              {editingOpp ? 'Guardar Cambios' : 'Crear Oportunidad'}
             </Button>
           </div>
         </form>
@@ -879,7 +1096,7 @@ export default function DealsPage() {
         onClose={() => setDeleteDialogOpen(false)}
         onConfirm={handleDeleteConfirm}
         title="Eliminar Oportunidad"
-        message={`¿Estás seguro de que deseas eliminar "${dealToDelete?.title}"?`}
+        message={`¿Estás seguro de que deseas eliminar "${oppToDelete?.title}"?`}
         confirmText="Eliminar"
         variant="danger"
       />

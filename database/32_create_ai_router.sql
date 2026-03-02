@@ -154,21 +154,21 @@ ALTER TABLE ai_usage_summary ENABLE ROW LEVEL SECURITY;
 CREATE POLICY ai_logs_select ON ai_request_logs FOR SELECT
   USING (
     my_company_id IN (
-      SELECT my_company_id FROM company_users WHERE user_id = auth.uid()
+      SELECT company_id FROM company_users WHERE user_id = auth.uid()
     )
   );
 
 CREATE POLICY ai_logs_insert ON ai_request_logs FOR INSERT
   WITH CHECK (
     my_company_id IN (
-      SELECT my_company_id FROM company_users WHERE user_id = auth.uid()
+      SELECT company_id FROM company_users WHERE user_id = auth.uid()
     )
   );
 
 CREATE POLICY ai_usage_select ON ai_usage_summary FOR SELECT
   USING (
     my_company_id IN (
-      SELECT my_company_id FROM company_users WHERE user_id = auth.uid()
+      SELECT company_id FROM company_users WHERE user_id = auth.uid()
     )
   );
 

@@ -104,9 +104,18 @@ export const taskStatusColors: Record<string, { bg: string; text: string; label:
   cancelled: { bg: 'bg-gray-200', text: 'text-gray-500', label: 'Cancelada' },
 };
 
-// Colores para etapas del deal
+// Colores para etapas del deal (legacy)
 export const dealStageColors: Record<string, { bg: string; text: string; label: string; color: string }> = {
   lead: { bg: 'bg-gray-100', text: 'text-gray-700', label: 'Lead', color: '#6b7280' },
+  qualified: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'Calificado', color: '#3b82f6' },
+  proposal: { bg: 'bg-indigo-100', text: 'text-indigo-700', label: 'Propuesta', color: '#6366f1' },
+  negotiation: { bg: 'bg-purple-100', text: 'text-purple-700', label: 'Negociación', color: '#8b5cf6' },
+  won: { bg: 'bg-green-100', text: 'text-green-700', label: 'Ganado', color: '#10b981' },
+  lost: { bg: 'bg-red-100', text: 'text-red-700', label: 'Perdido', color: '#ef4444' },
+};
+
+// Colores para etapas de oportunidades (nuevo modelo)
+export const opportunityStageColors: Record<string, { bg: string; text: string; label: string; color: string }> = {
   qualified: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'Calificado', color: '#3b82f6' },
   proposal: { bg: 'bg-indigo-100', text: 'text-indigo-700', label: 'Propuesta', color: '#6366f1' },
   negotiation: { bg: 'bg-purple-100', text: 'text-purple-700', label: 'Negociación', color: '#8b5cf6' },

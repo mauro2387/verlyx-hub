@@ -57,7 +57,7 @@ CREATE TABLE IF NOT EXISTS opportunities (
   -- Origin tracking
   lead_id UUID REFERENCES leads(id) ON DELETE SET NULL,
   client_id UUID,                               -- FK to contacts
-  organization_id UUID REFERENCES client_organizations(id) ON DELETE SET NULL,
+  organization_id UUID,                          -- FK to organizations (optional)
   
   -- Core info
   title VARCHAR(255) NOT NULL,
@@ -237,25 +237,23 @@ CREATE OR REPLACE FUNCTION audit_opportunities_changes()
 RETURNS TRIGGER AS $$
 BEGIN
   IF TG_OP = 'INSERT' THEN
-    INSERT INTO audit_logs (table_name, record_id, action, new_data, user_id)
-    VALUES ('opportunities', NEW.id, 'INSERT', to_jsonb(NEW), NEW.owner_user_id);
+    INSERT INTO audit_logs (entity_type, entity_id, action, changes, user_id)
+    VALUES ('opportunity', NEW.id, 'CREATE'::audit_action, to_jsonb(NEW), NEW.owner_user_id);
   ELSIF TG_OP = 'UPDATE' THEN
-    -- Special audit for stage changes
     IF OLD.stage IS DISTINCT FROM NEW.stage THEN
-      INSERT INTO audit_logs (table_name, record_id, action, old_data, new_data, user_id)
+      INSERT INTO audit_logs (entity_type, entity_id, action, changes, user_id)
       VALUES (
-        'opportunities', NEW.id, 'STAGE_CHANGE',
-        jsonb_build_object('stage', OLD.stage::TEXT),
-        jsonb_build_object('stage', NEW.stage::TEXT, 'reason', COALESCE(NEW.won_reason, NEW.lost_reason, '')),
+        'opportunity', NEW.id, 'STATUS_CHANGE'::audit_action,
+        jsonb_build_object('old_stage', OLD.stage::TEXT, 'new_stage', NEW.stage::TEXT, 'reason', COALESCE(NEW.won_reason, NEW.lost_reason, '')),
         NEW.owner_user_id
       );
     ELSE
-      INSERT INTO audit_logs (table_name, record_id, action, old_data, new_data, user_id)
-      VALUES ('opportunities', NEW.id, 'UPDATE', to_jsonb(OLD), to_jsonb(NEW), NEW.owner_user_id);
+      INSERT INTO audit_logs (entity_type, entity_id, action, changes, user_id)
+      VALUES ('opportunity', NEW.id, 'UPDATE'::audit_action, to_jsonb(NEW), NEW.owner_user_id);
     END IF;
   ELSIF TG_OP = 'DELETE' THEN
-    INSERT INTO audit_logs (table_name, record_id, action, old_data, user_id)
-    VALUES ('opportunities', OLD.id, 'DELETE', to_jsonb(OLD), OLD.owner_user_id);
+    INSERT INTO audit_logs (entity_type, entity_id, action, changes, user_id)
+    VALUES ('opportunity', OLD.id, 'DELETE'::audit_action, to_jsonb(OLD), OLD.owner_user_id);
   END IF;
   RETURN COALESCE(NEW, OLD);
 END;
@@ -273,28 +271,28 @@ ALTER TABLE opportunities ENABLE ROW LEVEL SECURITY;
 CREATE POLICY opportunities_select ON opportunities FOR SELECT
   USING (
     my_company_id IN (
-      SELECT my_company_id FROM company_users WHERE user_id = auth.uid()
+      SELECT company_id FROM company_users WHERE user_id = auth.uid()
     )
   );
 
 CREATE POLICY opportunities_insert ON opportunities FOR INSERT
   WITH CHECK (
     my_company_id IN (
-      SELECT my_company_id FROM company_users WHERE user_id = auth.uid()
+      SELECT company_id FROM company_users WHERE user_id = auth.uid()
     )
   );
 
 CREATE POLICY opportunities_update ON opportunities FOR UPDATE
   USING (
     my_company_id IN (
-      SELECT my_company_id FROM company_users WHERE user_id = auth.uid()
+      SELECT company_id FROM company_users WHERE user_id = auth.uid()
     )
   );
 
 CREATE POLICY opportunities_delete ON opportunities FOR DELETE
   USING (
     my_company_id IN (
-      SELECT my_company_id FROM company_users WHERE user_id = auth.uid()
+      SELECT company_id FROM company_users WHERE user_id = auth.uid()
     )
   );
 
@@ -380,7 +378,7 @@ BEGIN
   
   -- Optionally create project
   INSERT INTO projects (
-    my_company_id, client_id, name, description,
+    my_company_id, contact_id, name, description,
     status, priority, start_date, budget, currency
   ) VALUES (
     v_opp.my_company_id,
@@ -397,10 +395,9 @@ BEGIN
   
   -- Create onboarding task
   INSERT INTO tasks (
-    my_company_id, project_id, title, description,
+    project_id, title, description,
     status, priority, due_date
   ) VALUES (
-    v_opp.my_company_id,
     v_project_id,
     'Onboarding: ' || v_opp.title,
     'Checklist de onboarding para nuevo cliente',

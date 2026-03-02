@@ -3021,6 +3021,7 @@ interface OpportunitiesState {
   fetchOpportunities: () => Promise<void>;
   createOpportunity: (opp: Partial<Opportunity>) => Promise<Opportunity | null>;
   updateOpportunity: (id: string, data: Partial<Opportunity>) => Promise<void>;
+  deleteOpportunity: (id: string) => Promise<void>;
   changeStage: (id: string, stage: OpportunityStage, stageData: Record<string, unknown>) => Promise<boolean>;
   setSelectedOpportunity: (opp: Opportunity | null) => void;
   setFilter: (filter: Partial<OpportunitiesState['filter']>) => void;
@@ -3174,6 +3175,20 @@ export const useOpportunitiesStore = create<OpportunitiesState>((set, get) => ({
       set(state => ({
         opportunities: state.opportunities.map(o => o.id === id ? { ...o, ...updates } : o),
         selectedOpportunity: state.selectedOpportunity?.id === id ? { ...state.selectedOpportunity, ...updates } : state.selectedOpportunity,
+      }));
+    }
+  },
+
+  deleteOpportunity: async (id: string) => {
+    const { error } = await supabase
+      .from('opportunities')
+      .delete()
+      .eq('id', id);
+
+    if (!error) {
+      set(state => ({
+        opportunities: state.opportunities.filter(o => o.id !== id),
+        selectedOpportunity: state.selectedOpportunity?.id === id ? null : state.selectedOpportunity,
       }));
     }
   },

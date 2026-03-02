@@ -166,14 +166,14 @@ CREATE OR REPLACE FUNCTION audit_leads_changes()
 RETURNS TRIGGER AS $$
 BEGIN
   IF TG_OP = 'INSERT' THEN
-    INSERT INTO audit_logs (table_name, record_id, action, new_data, user_id)
-    VALUES ('leads', NEW.id, 'INSERT', to_jsonb(NEW), NEW.owner_user_id);
+    INSERT INTO audit_logs (entity_type, entity_id, action, changes, user_id)
+    VALUES ('leads', NEW.id, 'CREATE'::audit_action, to_jsonb(NEW), NEW.owner_user_id);
   ELSIF TG_OP = 'UPDATE' THEN
-    INSERT INTO audit_logs (table_name, record_id, action, old_data, new_data, user_id)
-    VALUES ('leads', NEW.id, 'UPDATE', to_jsonb(OLD), to_jsonb(NEW), NEW.owner_user_id);
+    INSERT INTO audit_logs (entity_type, entity_id, action, changes, user_id)
+    VALUES ('leads', NEW.id, 'UPDATE'::audit_action, jsonb_build_object('old', to_jsonb(OLD), 'new', to_jsonb(NEW)), NEW.owner_user_id);
   ELSIF TG_OP = 'DELETE' THEN
-    INSERT INTO audit_logs (table_name, record_id, action, old_data, user_id)
-    VALUES ('leads', OLD.id, 'DELETE', to_jsonb(OLD), OLD.owner_user_id);
+    INSERT INTO audit_logs (entity_type, entity_id, action, changes, user_id)
+    VALUES ('leads', OLD.id, 'DELETE'::audit_action, to_jsonb(OLD), OLD.owner_user_id);
   END IF;
   RETURN COALESCE(NEW, OLD);
 END;
@@ -191,28 +191,28 @@ ALTER TABLE leads ENABLE ROW LEVEL SECURITY;
 CREATE POLICY leads_select ON leads FOR SELECT
   USING (
     my_company_id IN (
-      SELECT my_company_id FROM company_users WHERE user_id = auth.uid()
+      SELECT company_id FROM company_users WHERE user_id = auth.uid()
     )
   );
 
 CREATE POLICY leads_insert ON leads FOR INSERT
   WITH CHECK (
     my_company_id IN (
-      SELECT my_company_id FROM company_users WHERE user_id = auth.uid()
+      SELECT company_id FROM company_users WHERE user_id = auth.uid()
     )
   );
 
 CREATE POLICY leads_update ON leads FOR UPDATE
   USING (
     my_company_id IN (
-      SELECT my_company_id FROM company_users WHERE user_id = auth.uid()
+      SELECT company_id FROM company_users WHERE user_id = auth.uid()
     )
   );
 
 CREATE POLICY leads_delete ON leads FOR DELETE
   USING (
     my_company_id IN (
-      SELECT my_company_id FROM company_users WHERE user_id = auth.uid()
+      SELECT company_id FROM company_users WHERE user_id = auth.uid()
     )
   );
 
@@ -245,14 +245,14 @@ ALTER TABLE lead_activities ENABLE ROW LEVEL SECURITY;
 CREATE POLICY lead_activities_select ON lead_activities FOR SELECT
   USING (
     my_company_id IN (
-      SELECT my_company_id FROM company_users WHERE user_id = auth.uid()
+      SELECT company_id FROM company_users WHERE user_id = auth.uid()
     )
   );
 
 CREATE POLICY lead_activities_insert ON lead_activities FOR INSERT
   WITH CHECK (
     my_company_id IN (
-      SELECT my_company_id FROM company_users WHERE user_id = auth.uid()
+      SELECT company_id FROM company_users WHERE user_id = auth.uid()
     )
   );
 
@@ -296,21 +296,21 @@ ALTER TABLE prospecting_campaigns ENABLE ROW LEVEL SECURITY;
 CREATE POLICY campaigns_select ON prospecting_campaigns FOR SELECT
   USING (
     my_company_id IN (
-      SELECT my_company_id FROM company_users WHERE user_id = auth.uid()
+      SELECT company_id FROM company_users WHERE user_id = auth.uid()
     )
   );
 
 CREATE POLICY campaigns_insert ON prospecting_campaigns FOR INSERT
   WITH CHECK (
     my_company_id IN (
-      SELECT my_company_id FROM company_users WHERE user_id = auth.uid()
+      SELECT company_id FROM company_users WHERE user_id = auth.uid()
     )
   );
 
 CREATE POLICY campaigns_update ON prospecting_campaigns FOR UPDATE
   USING (
     my_company_id IN (
-      SELECT my_company_id FROM company_users WHERE user_id = auth.uid()
+      SELECT company_id FROM company_users WHERE user_id = auth.uid()
     )
   );
 
@@ -448,10 +448,11 @@ BEGIN
   );
   
   -- Audit log
-  INSERT INTO audit_logs (table_name, record_id, action, new_data, user_id)
+  INSERT INTO audit_logs (entity_type, entity_id, action, changes, user_id)
   VALUES (
-    'leads', p_lead_id, 'CONVERT',
+    'leads', p_lead_id, 'OTHER'::audit_action,
     jsonb_build_object(
+      'event', 'lead_converted',
       'lead_id', p_lead_id,
       'opportunity_id', v_opportunity_id,
       'client_id', v_client_id
