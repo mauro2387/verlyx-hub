@@ -1,9 +1,12 @@
 // Types - Modelos de datos basados en Flutter
 
-// Enums/Types para estados
-export type TaskStatus = 'TODO' | 'IN_PROGRESS' | 'REVIEW' | 'BLOCKED' | 'DONE' | 'CANCELLED' | 'pending' | 'in_progress' | 'review' | 'completed' | 'cancelled';
-export type DealStage = 'LEAD' | 'QUALIFIED' | 'PROPOSAL' | 'NEGOTIATION' | 'CLOSED_WON' | 'CLOSED_LOST' | 'lead' | 'qualified' | 'proposal' | 'negotiation' | 'won' | 'lost';
-export type Priority = 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT' | 'CRITICAL' | 'low' | 'medium' | 'high' | 'critical';
+// Enums/Types para estados — canonical lowercase (matches DB CHECK constraints)
+export type TaskStatus = 'todo' | 'in_progress' | 'review' | 'blocked' | 'done' | 'cancelled';
+export type DealStage = 'lead' | 'qualified' | 'proposal' | 'negotiation' | 'won' | 'lost';
+export type Priority = 'low' | 'medium' | 'high' | 'urgent';
+export type ProjectStatus = 'backlog' | 'planning' | 'in_progress' | 'on_hold' | 'review' | 'done' | 'cancelled';
+export type ContactType = 'lead' | 'client' | 'partner' | 'supplier' | 'merchant';
+export type ContactStatus = 'new' | 'contacted' | 'qualified' | 'negotiation' | 'won' | 'lost' | 'inactive';
 
 export interface Client {
   id: string;
@@ -15,7 +18,7 @@ export interface Client {
   company?: string;
   companyName?: string;
   position?: string;
-  type: 'client' | 'partner' | 'supplier' | 'merchant' | 'individual' | 'company' | 'lead' | null;
+  type: ContactType | null;
   description?: string | null;
   logoUrl?: string | null;
   primaryColor?: string | null;
@@ -34,7 +37,7 @@ export interface Project {
   clientCompanyId?: string | null;
   name: string;
   description?: string | null;
-  status: 'backlog' | 'planning' | 'in_progress' | 'on_hold' | 'review' | 'done' | 'cancelled' | 'active' | 'completed';
+  status: ProjectStatus;
   priority: Priority;
   budget?: number | null;
   spent?: number | null;
@@ -97,7 +100,7 @@ export interface Deal {
   name?: string;
   description?: string | null;
   stage: DealStage;
-  priority?: 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT' | 'low' | 'medium' | 'high' | 'critical';
+  priority?: Priority;
   amount?: number | null;
   value?: number;
   currency?: string;
@@ -149,6 +152,11 @@ export interface Document {
   folder?: string | null;
   mimeType?: string | null;
   size?: number | null;
+  tags?: string[] | null;
+  isPublic?: boolean;
+  projectId?: string | null;
+  contactId?: string | null;
+  dealId?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -906,7 +914,7 @@ export interface ContactHistory {
 export interface LeadScore {
   contactId: string;
   score: number; // 0-100
-  temperature: 'cold' | 'warm' | 'hot';
+  temperature: LeadTemperature;
   lastActivity?: string | null;
   factors: {
     engagement: number;

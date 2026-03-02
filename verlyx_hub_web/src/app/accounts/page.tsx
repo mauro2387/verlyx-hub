@@ -94,6 +94,7 @@ export default function AccountsPage() {
       bankName: formData.bankName || undefined,
       accountNumber: formData.accountNumber || undefined,
       initialBalance: parseFloat(formData.initialBalance),
+      currentBalance: parseFloat(formData.initialBalance),
       isActive: true,
       color: formData.color,
       icon: formData.icon,
@@ -130,7 +131,7 @@ export default function AccountsPage() {
       <PageHeader
         title="🏦 Cuentas y Cajas"
         description="Gestiona efectivo, bancos y pasarelas de pago"
-        action={
+        actions={
           <Button onClick={() => handleOpenModal()}>
             ➕ Nueva Cuenta
           </Button>
@@ -285,7 +286,7 @@ export default function AccountsPage() {
               label="Tipo de Cuenta *"
               value={formData.type}
               onChange={(e) => {
-                const newType = e.target.value as any;
+                const newType = e.target.value as keyof typeof typeConfig;
                 const config = typeConfig[newType];
                 setFormData({ 
                   ...formData, 
@@ -295,13 +296,11 @@ export default function AccountsPage() {
                 });
               }}
               required
-            >
-              {Object.entries(typeConfig).map(([value, config]) => (
-                <option key={value} value={value}>
-                  {config.icon} {config.label}
-                </option>
-              ))}
-            </Select>
+              options={Object.entries(typeConfig).map(([value, config]) => ({
+                value,
+                label: `${config.icon} ${config.label}`,
+              }))}
+            />
 
             <div className="grid grid-cols-2 gap-4">
               <Input
@@ -320,11 +319,12 @@ export default function AccountsPage() {
                 value={formData.currency}
                 onChange={(e) => setFormData({ ...formData, currency: e.target.value })}
                 required
-              >
-                <option value="UYU">UYU (Pesos Uruguayos)</option>
-                <option value="USD">USD (Dólares)</option>
-                <option value="EUR">EUR (Euros)</option>
-              </Select>
+                options={[
+                  { value: 'UYU', label: 'UYU (Pesos Uruguayos)' },
+                  { value: 'USD', label: 'USD (Dólares)' },
+                  { value: 'EUR', label: 'EUR (Euros)' },
+                ]}
+              />
             </div>
 
             {formData.type === 'bank' && (
@@ -353,15 +353,16 @@ export default function AccountsPage() {
                 <Select
                   value={formData.icon}
                   onChange={(e) => setFormData({ ...formData, icon: e.target.value })}
-                >
-                  <option value="💵">💵 Dinero</option>
-                  <option value="🏦">🏦 Banco</option>
-                  <option value="💳">💳 Tarjeta</option>
-                  <option value="💰">💰 Tesoro</option>
-                  <option value="🏪">🏪 Comercio</option>
-                  <option value="📱">📱 Digital</option>
-                  <option value="💎">💎 Premium</option>
-                </Select>
+                  options={[
+                    { value: '💵', label: '💵 Dinero' },
+                    { value: '🏦', label: '🏦 Banco' },
+                    { value: '💳', label: '💳 Tarjeta' },
+                    { value: '💰', label: '💰 Tesoro' },
+                    { value: '🏪', label: '🏪 Comercio' },
+                    { value: '📱', label: '📱 Digital' },
+                    { value: '💎', label: '💎 Premium' },
+                  ]}
+                />
               </div>
 
               <div>

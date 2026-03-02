@@ -11,6 +11,9 @@ import {
   DashboardStats,
   TaskStatus,
   DealStage,
+  ContactType,
+  ProjectStatus,
+  Priority,
 } from './types';
 import {
   mockDocuments,
@@ -240,7 +243,7 @@ export const useClientsStore = create<ClientsState>((set, get) => ({
         phone: c.phone || '',
         company: c.company || '',
         companyName: c.company || '',
-        type: c.type as 'individual' | 'company',
+        type: (c.type as ContactType) || null,
         position: c.position || '',
         status: c.status,
         notes: c.notes || '',
@@ -358,8 +361,8 @@ export const useProjectsStore = create<ProjectsState>((set, get) => ({
         id: p.id,
         name: p.name,
         description: p.description || '',
-        status: p.status as 'planning' | 'active' | 'on_hold' | 'completed' | 'cancelled',
-        priority: p.priority as 'low' | 'medium' | 'high' | 'critical',
+        status: p.status as ProjectStatus,
+        priority: p.priority as Priority,
         clientId: p.contact_id || undefined,
         startDate: p.start_date || undefined,
         endDate: p.end_date || undefined,
@@ -502,7 +505,7 @@ export const useTasksStore = create<TasksState>((set, get) => ({
         title: t.title,
         description: t.description || '',
         status: t.status as TaskStatus,
-        priority: t.priority as 'low' | 'medium' | 'high' | 'critical',
+        priority: t.priority as Priority,
         projectId: t.project_id,
         assignedTo: t.assigned_to || undefined,
         assigneeName: undefined,
@@ -547,7 +550,7 @@ export const useTasksStore = create<TasksState>((set, get) => ({
       due_date: data.dueDate,
       estimated_hours: data.estimatedHours,
       actual_hours: data.actualHours,
-      completed_at: data.status === 'DONE' ? new Date().toISOString() : null,
+      completed_at: data.status === 'done' ? new Date().toISOString() : null,
       tags: data.tags,
     });
     get().fetchTasks();
@@ -734,7 +737,7 @@ export const useDealsStore = create<DealsState>((set, get) => ({
   },
   getStageStats: () => {
     const deals = get().deals;
-    const stages: DealStage[] = ['LEAD', 'QUALIFIED', 'PROPOSAL', 'NEGOTIATION', 'CLOSED_WON', 'CLOSED_LOST'];
+    const stages: DealStage[] = ['lead', 'qualified', 'proposal', 'negotiation', 'won', 'lost'];
     return stages.map((stage) => {
       const stageDeals = deals.filter((d) => d.stage === stage);
       return {
@@ -2266,7 +2269,7 @@ export const useContactActivitiesStore = create<ContactActivitiesState>((set, ge
     const { error } = await crm.activities.update(id, {
       activityType: updates.activityType,
       direction: updates.direction,
-      sentiment: updates.sentiment,
+      sentiment: updates.sentiment || undefined,
       subject: updates.subject || undefined,
       description: updates.description || undefined,
       outcome: updates.outcome || undefined,

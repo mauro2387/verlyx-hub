@@ -53,7 +53,7 @@ export default function NewProjectPage() {
         name: formData.name,
         description: formData.description || null,
         status: formData.status as 'backlog' | 'planning' | 'in_progress' | 'on_hold' | 'review' | 'done' | 'cancelled',
-        priority: formData.priority as 'low' | 'medium' | 'high' | 'critical',
+        priority: formData.priority as 'low' | 'medium' | 'high' | 'urgent',
         budget: formData.budget ? parseFloat(formData.budget) : null,
         spentAmount: 0,
         currency: 'USD',
@@ -127,7 +127,7 @@ export default function NewProjectPage() {
                   { value: 'low', label: 'Baja' },
                   { value: 'medium', label: 'Media' },
                   { value: 'high', label: 'Alta' },
-                  { value: 'critical', label: 'Crítica' },
+                  { value: 'urgent', label: 'Urgente' },
                 ]}
               />
             </div>

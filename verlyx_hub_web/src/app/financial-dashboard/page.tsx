@@ -245,38 +245,32 @@ export default function FinancialDashboardPage() {
               <Select
                 value={selectedMonth.toString()}
                 onChange={(e) => setSelectedMonth(parseInt(e.target.value))}
-              >
-                {months.map((month, index) => (
-                  <option key={index} value={index}>
-                    {month}
-                  </option>
-                ))}
-              </Select>
+                options={months.map((month, index) => ({
+                  value: index.toString(),
+                  label: month,
+                }))}
+              />
             )}
 
             {period === 'quarter' && (
               <Select
                 value={Math.floor(selectedMonth / 3).toString()}
                 onChange={(e) => setSelectedMonth(parseInt(e.target.value) * 3)}
-              >
-                {quarters.map((quarter, index) => (
-                  <option key={index} value={index}>
-                    {quarter}
-                  </option>
-                ))}
-              </Select>
+                options={quarters.map((quarter, index) => ({
+                  value: index.toString(),
+                  label: quarter,
+                }))}
+              />
             )}
 
             <Select
               value={selectedYear.toString()}
               onChange={(e) => setSelectedYear(parseInt(e.target.value))}
-            >
-              {[2026, 2025, 2024, 2023].map(year => (
-                <option key={year} value={year}>
-                  {year}
-                </option>
-              ))}
-            </Select>
+              options={[2026, 2025, 2024, 2023].map(year => ({
+                value: year.toString(),
+                label: year.toString(),
+              }))}
+            />
           </div>
         </CardContent>
       </Card>

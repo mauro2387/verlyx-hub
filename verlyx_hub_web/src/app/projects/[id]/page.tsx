@@ -45,9 +45,9 @@ export default function ProjectDetailPage() {
 
   const taskStats = {
     total: projectTasks.length,
-    done: projectTasks.filter(t => t.status === 'DONE').length,
-    inProgress: projectTasks.filter(t => t.status === 'IN_PROGRESS').length,
-    blocked: projectTasks.filter(t => t.status === 'BLOCKED').length,
+    done: projectTasks.filter(t => t.status === 'done').length,
+    inProgress: projectTasks.filter(t => t.status === 'in_progress').length,
+    blocked: projectTasks.filter(t => t.status === 'blocked').length,
   };
 
   return (

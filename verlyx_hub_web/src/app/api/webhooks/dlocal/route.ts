@@ -81,14 +81,15 @@ export async function POST(request: NextRequest) {
           }
 
           // Create notification
-          await supabase.from('notifications').insert({
+          const { error: notifError } = await supabase.from('notifications').insert({
             type: 'payment',
             title: 'Pago recibido',
             message: `Se recibió un pago de ${currency || 'USD'} ${(amount || paymentLink.amount).toLocaleString()} de ${paymentLink.client_name || 'Cliente'}`,
             data: { payment_id, order_id: external_reference, amount },
             read: false,
             created_at: new Date().toISOString(),
-          }).catch(e => console.log('Notification error (non-critical):', e));
+          });
+          if (notifError) console.log('Notification error (non-critical):', notifError);
         }
       }
     }

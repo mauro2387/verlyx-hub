@@ -91,32 +91,27 @@ export const priorityColors: Record<string, { bg: string; text: string; label: s
   low: { bg: 'bg-gray-100', text: 'text-gray-600', label: 'Baja' },
   medium: { bg: 'bg-blue-100', text: 'text-blue-600', label: 'Media' },
   high: { bg: 'bg-orange-100', text: 'text-orange-600', label: 'Alta' },
-  critical: { bg: 'bg-red-100', text: 'text-red-600', label: 'Crítica' },
-  LOW: { bg: 'bg-gray-100', text: 'text-gray-600', label: 'Baja' },
-  MEDIUM: { bg: 'bg-blue-100', text: 'text-blue-600', label: 'Media' },
-  HIGH: { bg: 'bg-orange-100', text: 'text-orange-600', label: 'Alta' },
-  URGENT: { bg: 'bg-red-100', text: 'text-red-600', label: 'Urgente' },
-  CRITICAL: { bg: 'bg-red-100', text: 'text-red-600', label: 'Crítica' },
+  urgent: { bg: 'bg-red-100', text: 'text-red-600', label: 'Urgente' },
 };
 
 // Colores para estados de tareas
 export const taskStatusColors: Record<string, { bg: string; text: string; label: string }> = {
-  TODO: { bg: 'bg-gray-100', text: 'text-gray-700', label: 'Por Hacer' },
-  IN_PROGRESS: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'En Progreso' },
-  REVIEW: { bg: 'bg-purple-100', text: 'text-purple-700', label: 'En Revisión' },
-  BLOCKED: { bg: 'bg-red-100', text: 'text-red-700', label: 'Bloqueada' },
-  DONE: { bg: 'bg-green-100', text: 'text-green-700', label: 'Completada' },
-  CANCELLED: { bg: 'bg-gray-200', text: 'text-gray-500', label: 'Cancelada' },
+  todo: { bg: 'bg-gray-100', text: 'text-gray-700', label: 'Por Hacer' },
+  in_progress: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'En Progreso' },
+  review: { bg: 'bg-purple-100', text: 'text-purple-700', label: 'En Revisión' },
+  blocked: { bg: 'bg-red-100', text: 'text-red-700', label: 'Bloqueada' },
+  done: { bg: 'bg-green-100', text: 'text-green-700', label: 'Completada' },
+  cancelled: { bg: 'bg-gray-200', text: 'text-gray-500', label: 'Cancelada' },
 };
 
 // Colores para etapas del deal
 export const dealStageColors: Record<string, { bg: string; text: string; label: string; color: string }> = {
-  LEAD: { bg: 'bg-gray-100', text: 'text-gray-700', label: 'Lead', color: '#6b7280' },
-  QUALIFIED: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'Calificado', color: '#3b82f6' },
-  PROPOSAL: { bg: 'bg-indigo-100', text: 'text-indigo-700', label: 'Propuesta', color: '#6366f1' },
-  NEGOTIATION: { bg: 'bg-purple-100', text: 'text-purple-700', label: 'Negociación', color: '#8b5cf6' },
-  CLOSED_WON: { bg: 'bg-green-100', text: 'text-green-700', label: 'Ganado', color: '#10b981' },
-  CLOSED_LOST: { bg: 'bg-red-100', text: 'text-red-700', label: 'Perdido', color: '#ef4444' },
+  lead: { bg: 'bg-gray-100', text: 'text-gray-700', label: 'Lead', color: '#6b7280' },
+  qualified: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'Calificado', color: '#3b82f6' },
+  proposal: { bg: 'bg-indigo-100', text: 'text-indigo-700', label: 'Propuesta', color: '#6366f1' },
+  negotiation: { bg: 'bg-purple-100', text: 'text-purple-700', label: 'Negociación', color: '#8b5cf6' },
+  won: { bg: 'bg-green-100', text: 'text-green-700', label: 'Ganado', color: '#10b981' },
+  lost: { bg: 'bg-red-100', text: 'text-red-700', label: 'Perdido', color: '#ef4444' },
 };
 
 // Tipos de cliente

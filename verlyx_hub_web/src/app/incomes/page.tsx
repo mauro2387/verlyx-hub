@@ -217,7 +217,7 @@ export default function IncomesPage() {
       <PageHeader
         title="💰 Ingresos"
         description="Gestiona facturas, cobros e ingresos de la empresa"
-        action={
+        actions={
           <Button onClick={() => handleOpenModal()}>
             ➕ Nuevo Ingreso
           </Button>
@@ -237,13 +237,13 @@ export default function IncomesPage() {
             title="Este Mes"
             value={stats.thisMonth}
             description={formatCurrency(stats.thisMonthTotal)}
-            color="emerald"
+            color="green"
           />
           <StatCard
             title="Por Cobrar"
             value={stats.pending}
             description={formatCurrency(stats.pendingTotal)}
-            color="yellow"
+            color="orange"
           />
           <StatCard
             title="Cobrados"
@@ -266,32 +266,33 @@ export default function IncomesPage() {
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <SearchInput
               value={filter.search}
-              onChange={(value) => setFilter({ search: value })}
+              onChange={(e) => setFilter({ search: e.target.value })}
               placeholder="Buscar ingresos..."
             />
             
             <Select
               value={filter.categoryId || ''}
               onChange={(e) => setFilter({ categoryId: e.target.value || null })}
-            >
-              <option value="">Todas las categorías</option>
-              {incomeCategories.map(cat => (
-                <option key={cat.id} value={cat.id}>
-                  {cat.icon} {cat.name}
-                </option>
-              ))}
-            </Select>
+              options={[
+                { value: '', label: 'Todas las categorías' },
+                ...incomeCategories.map(cat => ({
+                  value: cat.id,
+                  label: `${cat.icon} ${cat.name}`,
+                })),
+              ]}
+            />
 
             <Select
               value={filter.status || ''}
               onChange={(e) => setFilter({ status: e.target.value || null })}
-            >
-              <option value="">Todos los estados</option>
-              <option value="pending">⏳ Pendiente</option>
-              <option value="received">✓ Cobrado</option>
-              <option value="overdue">⚠️ Vencido</option>
-              <option value="cancelled">✗ Cancelado</option>
-            </Select>
+              options={[
+                { value: '', label: 'Todos los estados' },
+                { value: 'pending', label: '⏳ Pendiente' },
+                { value: 'received', label: '✓ Cobrado' },
+                { value: 'overdue', label: '⚠️ Vencido' },
+                { value: 'cancelled', label: '✗ Cancelado' },
+              ]}
+            />
 
             <div className="flex gap-2">
               <Button
@@ -358,7 +359,7 @@ export default function IncomesPage() {
                           </td>
                           <td className="py-3 px-4">
                             {income.category && (
-                              <Badge style={{ backgroundColor: income.category.color }}>
+                              <Badge variant="default">
                                 {income.category.icon} {income.category.name}
                               </Badge>
                             )}
@@ -572,25 +573,26 @@ export default function IncomesPage() {
                 label="Moneda"
                 value={formData.currency}
                 onChange={(e) => setFormData({ ...formData, currency: e.target.value })}
-              >
-                <option value="UYU">UYU (Pesos Uruguayos)</option>
-                <option value="USD">USD (Dólares)</option>
-                <option value="EUR">EUR (Euros)</option>
-              </Select>
+                options={[
+                  { value: 'UYU', label: 'UYU (Pesos Uruguayos)' },
+                  { value: 'USD', label: 'USD (Dólares)' },
+                  { value: 'EUR', label: 'EUR (Euros)' },
+                ]}
+              />
             </div>
 
             <Select
               label="Categoría"
               value={formData.categoryId}
               onChange={(e) => setFormData({ ...formData, categoryId: e.target.value })}
-            >
-              <option value="">Sin categoría</option>
-              {incomeCategories.map(cat => (
-                <option key={cat.id} value={cat.id}>
-                  {cat.icon} {cat.name}
-                </option>
-              ))}
-            </Select>
+              options={[
+                { value: '', label: 'Sin categoría' },
+                ...incomeCategories.map(cat => ({
+                  value: cat.id,
+                  label: `${cat.icon} ${cat.name}`,
+                })),
+              ]}
+            />
           </div>
 
           {/* Cliente */}
@@ -608,14 +610,14 @@ export default function IncomesPage() {
                   clientName: client?.name || ''
                 });
               }}
-            >
-              <option value="">Seleccionar cliente</option>
-              {clients.map(client => (
-                <option key={client.id} value={client.id}>
-                  {client.name} {client.email ? `(${client.email})` : ''}
-                </option>
-              ))}
-            </Select>
+              options={[
+                { value: '', label: 'Seleccionar cliente' },
+                ...clients.map(client => ({
+                  value: client.id,
+                  label: `${client.name}${client.email ? ` (${client.email})` : ''}`,
+                })),
+              ]}
+            />
 
             <Input
               label="Nombre del Cliente (manual)"
@@ -671,38 +673,40 @@ export default function IncomesPage() {
                 label="Método de Pago"
                 value={formData.paymentMethod}
                 onChange={(e) => setFormData({ ...formData, paymentMethod: e.target.value })}
-              >
-                <option value="cash">💵 Efectivo</option>
-                <option value="transfer">🏦 Transferencia</option>
-                <option value="card">💳 Tarjeta</option>
-                <option value="mercadopago">💙 MercadoPago</option>
-                <option value="check">📄 Cheque</option>
-              </Select>
+                options={[
+                  { value: 'cash', label: '💵 Efectivo' },
+                  { value: 'transfer', label: '🏦 Transferencia' },
+                  { value: 'card', label: '💳 Tarjeta' },
+                  { value: 'mercadopago', label: '💙 MercadoPago' },
+                  { value: 'check', label: '📄 Cheque' },
+                ]}
+              />
 
               <Select
                 label="Cuenta"
                 value={formData.accountId}
                 onChange={(e) => setFormData({ ...formData, accountId: e.target.value })}
-              >
-                <option value="">Seleccionar cuenta</option>
-                {accounts.map(acc => (
-                  <option key={acc.id} value={acc.id}>
-                    {acc.icon} {acc.name} - {formatCurrency(acc.currentBalance)}
-                  </option>
-                ))}
-              </Select>
+                options={[
+                  { value: '', label: 'Seleccionar cuenta' },
+                  ...accounts.map(acc => ({
+                    value: acc.id,
+                    label: `${acc.icon} ${acc.name} - ${formatCurrency(acc.currentBalance)}`,
+                  })),
+                ]}
+              />
             </div>
 
             <Select
               label="Estado"
               value={formData.status}
               onChange={(e) => setFormData({ ...formData, status: e.target.value as any })}
-            >
-              <option value="pending">⏳ Pendiente</option>
-              <option value="received">✓ Cobrado</option>
-              <option value="overdue">⚠️ Vencido</option>
-              <option value="cancelled">✗ Cancelado</option>
-            </Select>
+              options={[
+                { value: 'pending', label: '⏳ Pendiente' },
+                { value: 'received', label: '✓ Cobrado' },
+                { value: 'overdue', label: '⚠️ Vencido' },
+                { value: 'cancelled', label: '✗ Cancelado' },
+              ]}
+            />
           </div>
 
           {/* Proyecto */}
@@ -713,14 +717,14 @@ export default function IncomesPage() {
               label="Proyecto Relacionado"
               value={formData.projectId}
               onChange={(e) => setFormData({ ...formData, projectId: e.target.value })}
-            >
-              <option value="">Sin proyecto</option>
-              {projects.map(proj => (
-                <option key={proj.id} value={proj.id}>
-                  {proj.name}
-                </option>
-              ))}
-            </Select>
+              options={[
+                { value: '', label: 'Sin proyecto' },
+                ...projects.map(proj => ({
+                  value: proj.id,
+                  label: proj.name,
+                })),
+              ]}
+            />
 
             <Textarea
               label="Notas"

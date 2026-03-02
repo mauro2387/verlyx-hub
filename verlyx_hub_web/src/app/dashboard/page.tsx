@@ -43,8 +43,8 @@ export default function DashboardPage() {
   }, [fetchStats, fetchProjects, fetchTasks, fetchDeals, fetchClients, fetchFinancialStats, fetchExpenses, fetchIncomes, fetchAccounts]);
 
   const recentProjects = projects.slice(0, 5);
-  const pendingTasks = tasks.filter(t => t.status === 'TODO' || t.status === 'IN_PROGRESS' || t.status === 'pending' || t.status === 'in_progress').slice(0, 5);
-  const activeDeals = deals.filter(d => d.stage !== 'CLOSED_WON' && d.stage !== 'CLOSED_LOST' && d.stage !== 'won' && d.stage !== 'lost').slice(0, 5);
+  const pendingTasks = tasks.filter(t => t.status === 'todo' || t.status === 'in_progress').slice(0, 5);
+  const activeDeals = deals.filter(d => d.stage !== 'won' && d.stage !== 'lost').slice(0, 5);
   
   // Financial calculations
   const overdueIncomes = getOverdueIncomes();

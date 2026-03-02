@@ -838,7 +838,7 @@ export default function OrganizationsPage() {
         isOpen={isDetailModalOpen} 
         onClose={() => setIsDetailModalOpen(false)} 
         title="Detalles de Organización"
-        size="large"
+        size="lg"
       >
         {selectedOrgForDetail && (
           <div className="space-y-6">
@@ -1006,7 +1006,7 @@ export default function OrganizationsPage() {
         isOpen={isModalOpen} 
         onClose={() => setIsModalOpen(false)} 
         title={editingOrg ? 'Editar Organización' : 'Nueva Organización'}
-        size="large"
+        size="lg"
       >
         <form onSubmit={handleSubmit} className="space-y-6">
           <div className="grid grid-cols-2 gap-4">

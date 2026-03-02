@@ -7,7 +7,7 @@ import { useDealsStore, useClientsStore, useCompanyStore } from '@/lib/store';
 import { Deal, DealStage } from '@/lib/types';
 import { dealStageColors, priorityColors, formatCurrency, formatDate, cn } from '@/lib/utils';
 
-const DEAL_STAGES: DealStage[] = ['LEAD', 'QUALIFIED', 'PROPOSAL', 'NEGOTIATION', 'CLOSED_WON', 'CLOSED_LOST'];
+const DEAL_STAGES: DealStage[] = ['lead', 'qualified', 'proposal', 'negotiation', 'won', 'lost'];
 
 type ViewMode = 'kanban' | 'table' | 'stats';
 
@@ -44,8 +44,8 @@ export default function DealsPage() {
   const [formData, setFormData] = useState<DealFormData>({
     title: '',
     description: '',
-    stage: 'LEAD' as DealStage,
-    priority: 'MEDIUM',
+    stage: 'lead' as DealStage,
+    priority: 'medium',
     clientId: '',
     amount: '',
     currency: 'UYU',
@@ -76,8 +76,8 @@ export default function DealsPage() {
   // Deal Statistics
   const dealStats = useMemo(() => {
     const activeDeals = deals.filter(d => d.isActive);
-    const wonDeals = deals.filter(d => d.stage === 'CLOSED_WON');
-    const lostDeals = deals.filter(d => d.stage === 'CLOSED_LOST');
+    const wonDeals = deals.filter(d => d.stage === 'won');
+    const lostDeals = deals.filter(d => d.stage === 'lost');
     
     return {
       total: deals.length,
@@ -106,7 +106,7 @@ export default function DealsPage() {
         title: deal.title,
         description: deal.description || '',
         stage: deal.stage,
-        priority: deal.priority || 'MEDIUM',
+        priority: deal.priority || 'medium',
         clientId: deal.clientId || '',
         amount: deal.amount?.toString() || '',
         currency: deal.currency || 'UYU',
@@ -121,8 +121,8 @@ export default function DealsPage() {
       setFormData({
         title: '',
         description: '',
-        stage: 'LEAD',
-        priority: 'MEDIUM',
+        stage: 'lead',
+        priority: 'medium',
         clientId: '',
         amount: '',
         currency: 'UYU',
@@ -150,7 +150,7 @@ export default function DealsPage() {
       title: formData.title,
       description: formData.description || null,
       stage: formData.stage,
-      priority: formData.priority as 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT',
+      priority: formData.priority as 'low' | 'medium' | 'high' | 'urgent',
       amount,
       currency: formData.currency,
       probability,
@@ -163,7 +163,7 @@ export default function DealsPage() {
       daysInStage: 0,
       nextAction: formData.nextAction || null,
       nextActionDate: null,
-      isActive: !['CLOSED_WON', 'CLOSED_LOST'].includes(formData.stage),
+      isActive: !['won', 'lost'].includes(formData.stage),
     };
 
     if (editingDeal) {
@@ -299,10 +299,10 @@ export default function DealsPage() {
               onChange={(e) => setFilterPriority(e.target.value)}
               options={[
                 { value: '', label: 'Todas las prioridades' },
-                { value: 'LOW', label: 'Baja' },
-                { value: 'MEDIUM', label: 'Media' },
-                { value: 'HIGH', label: 'Alta' },
-                { value: 'URGENT', label: 'Urgente' },
+                { value: 'low', label: 'Baja' },
+                { value: 'medium', label: 'Media' },
+                { value: 'high', label: 'Alta' },
+                { value: 'urgent', label: 'Urgente' },
               ]}
             />
             <Button variant="outline" onClick={() => setShowStats(!showStats)}>
@@ -447,10 +447,10 @@ export default function DealsPage() {
                         <span className="text-lg font-bold text-gray-900">{formatCurrency(deal.amount || 0)}</span>
                         <span className={cn(
                           'px-2 py-0.5 text-xs font-medium rounded-full',
-                          priorityColors[deal.priority || 'MEDIUM']?.bg,
-                          priorityColors[deal.priority || 'MEDIUM']?.text
+                          priorityColors[deal.priority || 'medium']?.bg,
+                          priorityColors[deal.priority || 'medium']?.text
                         )}>
-                          {priorityColors[deal.priority || 'MEDIUM']?.label}
+                          {priorityColors[deal.priority || 'medium']?.label}
                         </span>
                       </div>
                       
@@ -538,17 +538,17 @@ export default function DealsPage() {
                       {getClientName(deal.clientId)}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <Badge variant={deal.stage === 'CLOSED_WON' ? 'success' : deal.stage === 'CLOSED_LOST' ? 'danger' : 'default'}>
+                      <Badge variant={deal.stage === 'won' ? 'success' : deal.stage === 'lost' ? 'danger' : 'default'}>
                         {dealStageColors[deal.stage]?.label || deal.stage}
                       </Badge>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span className={cn(
                         'px-2 py-0.5 text-xs font-medium rounded-full',
-                        priorityColors[deal.priority || 'MEDIUM']?.bg,
-                        priorityColors[deal.priority || 'MEDIUM']?.text
+                        priorityColors[deal.priority || 'medium']?.bg,
+                        priorityColors[deal.priority || 'medium']?.text
                       )}>
-                        {priorityColors[deal.priority || 'MEDIUM']?.label}
+                        {priorityColors[deal.priority || 'medium']?.label}
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
@@ -741,10 +741,10 @@ export default function DealsPage() {
                 value={formData.priority}
                 onChange={(e) => setFormData({ ...formData, priority: e.target.value })}
                 options={[
-                  { value: 'LOW', label: 'Baja' },
-                  { value: 'MEDIUM', label: 'Media' },
-                  { value: 'HIGH', label: 'Alta' },
-                  { value: 'URGENT', label: 'Urgente' },
+                  { value: 'low', label: 'Baja' },
+                  { value: 'medium', label: 'Media' },
+                  { value: 'high', label: 'Alta' },
+                  { value: 'urgent', label: 'Urgente' },
                 ]}
               />
             </div>

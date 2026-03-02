@@ -7,7 +7,7 @@ import { useTasksStore, useProjectsStore, useCompanyStore } from '@/lib/store';
 import { Task, TaskStatus } from '@/lib/types';
 import { taskStatusColors, priorityColors, cn, formatDate } from '@/lib/utils';
 
-const TASK_STATUSES: TaskStatus[] = ['TODO', 'IN_PROGRESS', 'REVIEW', 'BLOCKED', 'DONE', 'CANCELLED'];
+const TASK_STATUSES: TaskStatus[] = ['todo', 'in_progress', 'review', 'blocked', 'done', 'cancelled'];
 
 export default function TasksPage() {
   const { tasks, isLoading, fetchTasks, viewMode, setViewMode, filter, setFilter, addTask, updateTask, deleteTask, moveTask } = useTasksStore();
@@ -23,8 +23,8 @@ export default function TasksPage() {
   const [formData, setFormData] = useState({
     title: '',
     description: '',
-    status: 'TODO' as TaskStatus,
-    priority: 'MEDIUM',
+    status: 'todo' as TaskStatus,
+    priority: 'medium',
     projectId: '',
     estimatedHours: '',
     actualHours: '',
@@ -50,16 +50,16 @@ export default function TasksPage() {
   // Task Statistics
   const taskStats = {
     total: tasks.length,
-    todo: tasks.filter(t => t.status === 'TODO').length,
-    inProgress: tasks.filter(t => t.status === 'IN_PROGRESS').length,
-    review: tasks.filter(t => t.status === 'REVIEW').length,
-    blocked: tasks.filter(t => t.status === 'BLOCKED').length,
-    done: tasks.filter(t => t.status === 'DONE').length,
-    overdue: tasks.filter(t => t.dueDate && new Date(t.dueDate) < new Date() && t.status !== 'DONE').length,
+    todo: tasks.filter(t => t.status === 'todo').length,
+    inProgress: tasks.filter(t => t.status === 'in_progress').length,
+    review: tasks.filter(t => t.status === 'review').length,
+    blocked: tasks.filter(t => t.status === 'blocked').length,
+    done: tasks.filter(t => t.status === 'done').length,
+    overdue: tasks.filter(t => t.dueDate && new Date(t.dueDate) < new Date() && t.status !== 'done').length,
     dueToday: tasks.filter(t => {
       if (!t.dueDate) return false;
       const today = new Date().toISOString().split('T')[0];
-      return t.dueDate.split('T')[0] === today && t.status !== 'DONE';
+      return t.dueDate.split('T')[0] === today && t.status !== 'done';
     }).length,
     totalEstimatedHours: tasks.reduce((acc, t) => acc + (t.estimatedHours || 0), 0),
     totalActualHours: tasks.reduce((acc, t) => acc + (t.actualHours || 0), 0),
@@ -67,13 +67,13 @@ export default function TasksPage() {
 
   const handleQuickComplete = (task: Task) => {
     updateTask(task.id, { 
-      status: 'DONE' as TaskStatus,
+      status: 'done' as TaskStatus,
       completedAt: new Date().toISOString(),
     });
   };
 
   const handleQuickStart = (task: Task) => {
-    updateTask(task.id, { status: 'IN_PROGRESS' as TaskStatus });
+    updateTask(task.id, { status: 'in_progress' as TaskStatus });
   };
 
   const handleOpenModal = (task?: Task) => {
@@ -95,8 +95,8 @@ export default function TasksPage() {
       setFormData({
         title: '',
         description: '',
-        status: 'TODO',
-        priority: 'MEDIUM',
+        status: 'todo',
+        priority: 'medium',
         projectId: '',
         estimatedHours: '',
         actualHours: '',
@@ -120,15 +120,15 @@ export default function TasksPage() {
       title: formData.title,
       description: formData.description || null,
       status: formData.status,
-      priority: formData.priority as 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT' | 'CRITICAL',
+      priority: formData.priority as 'low' | 'medium' | 'high' | 'urgent',
       assignedTo: null,
       startDate: null,
       dueDate: formData.dueDate || null,
-      completedAt: formData.status === 'DONE' ? new Date().toISOString() : null,
+      completedAt: formData.status === 'done' ? new Date().toISOString() : null,
       estimatedHours: formData.estimatedHours ? parseInt(formData.estimatedHours) : null,
       actualHours: formData.actualHours ? parseInt(formData.actualHours) : 0,
-      progressPercentage: formData.status === 'DONE' ? 100 : 0,
-      isBlocked: formData.status === 'BLOCKED',
+      progressPercentage: formData.status === 'done' ? 100 : 0,
+      isBlocked: formData.status === 'blocked',
       blockedReason: null,
       tags: formData.tags ? formData.tags.split(',').map(t => t.trim()).filter(Boolean) : [],
       checklist: [],
@@ -237,12 +237,12 @@ export default function TasksPage() {
               onChange={(e) => setFilter({ status: e.target.value as TaskStatus || null })}
               options={[
                 { value: '', label: 'Todos los estados' },
-                { value: 'TODO', label: 'Por Hacer' },
-                { value: 'IN_PROGRESS', label: 'En Progreso' },
-                { value: 'REVIEW', label: 'En Revisión' },
-                { value: 'BLOCKED', label: 'Bloqueada' },
-                { value: 'DONE', label: 'Completada' },
-                { value: 'CANCELLED', label: 'Cancelada' },
+                { value: 'todo', label: 'Por Hacer' },
+                { value: 'in_progress', label: 'En Progreso' },
+                { value: 'review', label: 'En Revisión' },
+                { value: 'blocked', label: 'Bloqueada' },
+                { value: 'done', label: 'Completada' },
+                { value: 'cancelled', label: 'Cancelada' },
               ]}
             />
             <Select
@@ -251,10 +251,10 @@ export default function TasksPage() {
               onChange={(e) => setFilter({ priority: e.target.value || null })}
               options={[
                 { value: '', label: 'Todas las prioridades' },
-                { value: 'LOW', label: 'Baja' },
-                { value: 'MEDIUM', label: 'Media' },
-                { value: 'HIGH', label: 'Alta' },
-                { value: 'URGENT', label: 'Urgente' },
+                { value: 'low', label: 'Baja' },
+                { value: 'medium', label: 'Media' },
+                { value: 'high', label: 'Alta' },
+                { value: 'urgent', label: 'Urgente' },
               ]}
             />
             <Select
@@ -311,7 +311,7 @@ export default function TasksPage() {
       {/* Kanban View */}
       {viewMode === 'kanban' && (
         <div className="flex gap-4 overflow-x-auto pb-6">
-          {TASK_STATUSES.filter(s => s !== 'CANCELLED').map((status) => (
+          {TASK_STATUSES.filter(s => s !== 'cancelled').map((status) => (
             <div
               key={status}
               className="flex-shrink-0 w-80"
@@ -343,7 +343,7 @@ export default function TasksPage() {
                       <div className="flex items-start justify-between mb-2">
                         <h4 className="font-medium text-gray-900 text-sm flex-1">{task.title}</h4>
                         <div className="flex gap-1">
-                          {task.status === 'TODO' && (
+                          {task.status === 'todo' && (
                             <button
                               onClick={() => handleQuickStart(task)}
                               className="p-1 hover:bg-green-50 rounded"
@@ -355,7 +355,7 @@ export default function TasksPage() {
                               </svg>
                             </button>
                           )}
-                          {task.status !== 'DONE' && task.status !== 'CANCELLED' && (
+                          {task.status !== 'done' && task.status !== 'cancelled' && (
                             <button
                               onClick={() => handleQuickComplete(task)}
                               className="p-1 hover:bg-green-50 rounded"
@@ -514,11 +514,11 @@ export default function TasksPage() {
               value={formData.status}
               onChange={(e) => setFormData({ ...formData, status: e.target.value as TaskStatus })}
               options={[
-                { value: 'TODO', label: 'Por Hacer' },
-                { value: 'IN_PROGRESS', label: 'En Progreso' },
-                { value: 'REVIEW', label: 'En Revisión' },
-                { value: 'BLOCKED', label: 'Bloqueada' },
-                { value: 'DONE', label: 'Completada' },
+                { value: 'todo', label: 'Por Hacer' },
+                { value: 'in_progress', label: 'En Progreso' },
+                { value: 'review', label: 'En Revisión' },
+                { value: 'blocked', label: 'Bloqueada' },
+                { value: 'done', label: 'Completada' },
               ]}
             />
             <Select
@@ -526,10 +526,10 @@ export default function TasksPage() {
               value={formData.priority}
               onChange={(e) => setFormData({ ...formData, priority: e.target.value })}
               options={[
-                { value: 'LOW', label: 'Baja' },
-                { value: 'MEDIUM', label: 'Media' },
-                { value: 'HIGH', label: 'Alta' },
-                { value: 'URGENT', label: 'Urgente' },
+                { value: 'low', label: 'Baja' },
+                { value: 'medium', label: 'Media' },
+                { value: 'high', label: 'Alta' },
+                { value: 'urgent', label: 'Urgente' },
               ]}
             />
           </div>

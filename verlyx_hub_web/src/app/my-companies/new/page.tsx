@@ -4,10 +4,9 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { PageHeader } from '@/components/layout/PageHeader';
-import { Card } from '@/components/ui/Card';
-import { Button } from '@/components/ui/Button';
-import { Input } from '@/components/ui/Input';
-import { Select } from '@/components/ui/Select';
+import { Card } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input, Select } from '@/components/ui/input';
 import { useCompanyStore, useAuthStore } from '@/lib/store';
 
 type Step = 'basic' | 'branding' | 'fiscal' | 'review';
@@ -15,7 +14,7 @@ type Step = 'basic' | 'branding' | 'fiscal' | 'review';
 export default function NewCompanyPage() {
   const router = useRouter();
   const { user } = useAuthStore();
-  const { createCompany } = useCompanyStore();
+  const { addCompany } = useCompanyStore();
   
   const [currentStep, setCurrentStep] = useState<Step>('basic');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -108,23 +107,22 @@ export default function NewCompanyPage() {
     setError(null);
 
     try {
-      const newCompany = await createCompany({
+      await addCompany({
         name: formData.name,
-        business_name: formData.businessName || formData.name,
-        industry: formData.industry || null,
-        description: formData.description || null,
-        website: formData.website || null,
-        phone: formData.phone || null,
+        legalName: formData.businessName || formData.name,
+        taxId: formData.rut || '',
+        type: 'company',
+        industry: formData.industry || '',
         email: formData.email,
-        logo_url: formData.logo || null,
-        primary_color: formData.primaryColor,
-        secondary_color: formData.secondaryColor,
-        rut: formData.rut || null,
-        tax_regime: formData.taxRegime || null,
-        address: formData.address || null,
-        city: formData.city || null,
+        phone: formData.phone || '',
+        address: formData.address || '',
+        city: formData.city || '',
         country: formData.country,
-        owner_id: user!.id,
+        currency: 'USD',
+        primaryColor: formData.primaryColor,
+        secondaryColor: formData.secondaryColor,
+        logoUrl: formData.logo || undefined,
+        isActive: true,
       });
 
       // Redirect to company dashboard
@@ -215,20 +213,21 @@ export default function NewCompanyPage() {
                       label="Industria"
                       value={formData.industry}
                       onChange={(e) => handleInputChange('industry', e.target.value)}
-                    >
-                      <option value="">Selecciona una industria</option>
-                      <option value="technology">Tecnología</option>
-                      <option value="services">Servicios</option>
-                      <option value="retail">Retail</option>
-                      <option value="manufacturing">Manufactura</option>
-                      <option value="construction">Construcción</option>
-                      <option value="consulting">Consultoría</option>
-                      <option value="marketing">Marketing</option>
-                      <option value="finance">Finanzas</option>
-                      <option value="healthcare">Salud</option>
-                      <option value="education">Educación</option>
-                      <option value="other">Otra</option>
-                    </Select>
+                      options={[
+                        { value: '', label: 'Selecciona una industria' },
+                        { value: 'technology', label: 'Tecnología' },
+                        { value: 'services', label: 'Servicios' },
+                        { value: 'retail', label: 'Retail' },
+                        { value: 'manufacturing', label: 'Manufactura' },
+                        { value: 'construction', label: 'Construcción' },
+                        { value: 'consulting', label: 'Consultoría' },
+                        { value: 'marketing', label: 'Marketing' },
+                        { value: 'finance', label: 'Finanzas' },
+                        { value: 'healthcare', label: 'Salud' },
+                        { value: 'education', label: 'Educación' },
+                        { value: 'other', label: 'Otra' },
+                      ]}
+                    />
                     <div className="md:col-span-2">
                       <label className="block text-sm font-medium text-gray-700 mb-1">
                         Descripción
@@ -386,18 +385,19 @@ export default function NewCompanyPage() {
                       value={formData.country}
                       onChange={(e) => handleInputChange('country', e.target.value)}
                       required
-                    >
-                      <option value="Uruguay">Uruguay</option>
-                      <option value="Argentina">Argentina</option>
-                      <option value="Brasil">Brasil</option>
-                      <option value="Chile">Chile</option>
-                      <option value="Paraguay">Paraguay</option>
-                      <option value="Perú">Perú</option>
-                      <option value="Colombia">Colombia</option>
-                      <option value="México">México</option>
-                      <option value="España">España</option>
-                      <option value="Otro">Otro</option>
-                    </Select>
+                      options={[
+                        { value: 'Uruguay', label: 'Uruguay' },
+                        { value: 'Argentina', label: 'Argentina' },
+                        { value: 'Brasil', label: 'Brasil' },
+                        { value: 'Chile', label: 'Chile' },
+                        { value: 'Paraguay', label: 'Paraguay' },
+                        { value: 'Perú', label: 'Perú' },
+                        { value: 'Colombia', label: 'Colombia' },
+                        { value: 'México', label: 'México' },
+                        { value: 'España', label: 'España' },
+                        { value: 'Otro', label: 'Otro' },
+                      ]}
+                    />
                   </div>
                 </div>
               </div>

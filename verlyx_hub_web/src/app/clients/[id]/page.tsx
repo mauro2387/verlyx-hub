@@ -95,7 +95,7 @@ export default function ClientDetailPage() {
   const clientProjects = projects.filter(p => p.clientId === clientId);
   const clientDeals = deals.filter(d => d.clientId === clientId);
   const totalRevenue = clientDeals
-    .filter(d => d.stage === 'CLOSED_WON' || d.stage === 'won')
+    .filter(d => d.stage === 'won')
     .reduce((acc, d) => acc + (d.amount || 0), 0);
 
   // Handle quick activity logging
@@ -514,7 +514,7 @@ export default function ClientDetailPage() {
                           <p className="text-sm text-gray-500">{project.status}</p>
                         </div>
                         <div className="text-right">
-                          <Badge variant={project.status === 'completed' ? 'success' : 'default'}>
+                          <Badge variant={project.status === 'done' ? 'success' : 'default'}>
                             {project.status}
                           </Badge>
                         </div>

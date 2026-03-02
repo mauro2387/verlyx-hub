@@ -61,7 +61,7 @@ export default function ClientsPage() {
     const clientProjects = projects.filter(p => p.clientId === clientId);
     const clientDeals = deals.filter(d => d.clientId === clientId);
     const totalRevenue = clientDeals
-      .filter(d => d.stage === 'CLOSED_WON' || d.stage === 'won')
+      .filter(d => d.stage === 'won')
       .reduce((acc, d) => acc + (d.amount || 0), 0);
     
     return {
@@ -126,7 +126,7 @@ export default function ClientsPage() {
       company: formData.company,
       companyName: formData.company,
       position: formData.position,
-      type: formData.type as 'lead' | 'client' | 'partner' | 'individual' | 'company',
+      type: formData.type as 'lead' | 'client' | 'partner' | 'supplier' | 'merchant',
       status: formData.status,
       notes: formData.notes,
       tags: formData.tags,
@@ -237,8 +237,8 @@ export default function ClientsPage() {
                 { value: 'lead', label: 'Lead' },
                 { value: 'client', label: 'Cliente' },
                 { value: 'partner', label: 'Socio' },
-                { value: 'individual', label: 'Individual' },
-                { value: 'company', label: 'Empresa' },
+                { value: 'supplier', label: 'Proveedor' },
+                { value: 'merchant', label: 'Comerciante' },
               ]}
             />
             <Select
