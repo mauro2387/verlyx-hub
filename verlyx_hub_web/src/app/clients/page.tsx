@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { MainLayout, PageHeader } from '@/components/layout';
 import { Button, Card, CardContent, SearchInput, Select, EmptyState, Loading, Modal, Input, Textarea, ConfirmDialog, Avatar, Badge, StatCard } from '@/components/ui';
-import { useClientsStore, useProjectsStore, useDealsStore } from '@/lib/store';
+import { useClientsStore, useProjectsStore, useOpportunitiesStore } from '@/lib/store';
 import { Client } from '@/lib/types';
 import { clientTypeLabels, cn, generateRandomColor, formatDate, formatCurrency } from '@/lib/utils';
 
@@ -26,7 +26,7 @@ function getOnboardingChecklist(client: Client) {
 export default function ClientsPage() {
   const { clients, isLoading, fetchClients, addClient, updateClient, deleteClient, filter, setFilter, getFilteredClients } = useClientsStore();
   const { projects, fetchProjects } = useProjectsStore();
-  const { deals, fetchDeals } = useDealsStore();
+  const { opportunities: deals, fetchOpportunities: fetchDeals } = useOpportunitiesStore();
   const router = useRouter();
   
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
@@ -82,7 +82,7 @@ export default function ClientsPage() {
     const clientDeals = deals.filter(d => d.clientId === clientId);
     const totalRevenue = clientDeals
       .filter(d => d.stage === 'won')
-      .reduce((acc, d) => acc + (d.amount || 0), 0);
+      .reduce((acc, d) => acc + (d.finalAmount ?? d.tentativeAmount ?? d.estimatedAmountMax ?? 0), 0);
     
     return {
       projectsCount: clientProjects.length,

@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { MainLayout, PageHeader } from '@/components/layout';
 import { Button, Card, CardContent, Modal, Badge, Input, Select, Textarea, StatCard, SearchInput, Loading } from '@/components/ui';
-import { useCalendarStore, useProjectsStore, useClientsStore, useDealsStore, useTasksStore, CalendarEvent, CalendarEventType, CalendarEventStatus, CalendarEventPriority } from '@/lib/store';
+import { useCalendarStore, useProjectsStore, useClientsStore, useOpportunitiesStore, useTasksStore, CalendarEvent, CalendarEventType, CalendarEventStatus, CalendarEventPriority } from '@/lib/store';
 import { formatDateTime, cn } from '@/lib/utils';
 
 type ViewMode = 'month' | 'week' | 'day' | 'agenda' | 'list';
@@ -68,7 +68,7 @@ export default function CalendarPage() {
   
   const { projects, fetchProjects } = useProjectsStore();
   const { clients, fetchClients } = useClientsStore();
-  const { deals, fetchDeals } = useDealsStore();
+  const { opportunities: deals, fetchOpportunities: fetchDeals } = useOpportunitiesStore();
   const { tasks, fetchTasks } = useTasksStore();
 
   const [viewMode, setViewMode] = useState<ViewMode>('month');

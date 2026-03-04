@@ -8,20 +8,20 @@ import {
   useDashboardStore, 
   useProjectsStore, 
   useTasksStore, 
-  useDealsStore, 
+  useOpportunitiesStore, 
   useClientsStore,
   useFinancialStatsStore,
   useExpensesStore,
   useIncomesStore,
   useAccountsStore,
 } from '@/lib/store';
-import { formatCurrency, projectStatusColors, taskStatusColors, dealStageColors, cn } from '@/lib/utils';
+import { formatCurrency, projectStatusColors, taskStatusColors, opportunityStageColors, cn } from '@/lib/utils';
 
 export default function DashboardPage() {
   const { stats, fetchStats, isLoading: statsLoading } = useDashboardStore();
   const { projects, fetchProjects } = useProjectsStore();
   const { tasks, fetchTasks } = useTasksStore();
-  const { deals, fetchDeals } = useDealsStore();
+  const { opportunities, fetchOpportunities } = useOpportunitiesStore();
   const { clients, fetchClients } = useClientsStore();
   
   // Financial data
@@ -34,17 +34,17 @@ export default function DashboardPage() {
     fetchStats();
     fetchProjects();
     fetchTasks();
-    fetchDeals();
+    fetchOpportunities();
     fetchClients();
     fetchFinancialStats();
     fetchExpenses();
     fetchIncomes();
     fetchAccounts();
-  }, [fetchStats, fetchProjects, fetchTasks, fetchDeals, fetchClients, fetchFinancialStats, fetchExpenses, fetchIncomes, fetchAccounts]);
+  }, [fetchStats, fetchProjects, fetchTasks, fetchOpportunities, fetchClients, fetchFinancialStats, fetchExpenses, fetchIncomes, fetchAccounts]);
 
   const recentProjects = projects.slice(0, 5);
   const pendingTasks = tasks.filter(t => t.status === 'todo' || t.status === 'in_progress').slice(0, 5);
-  const activeDeals = deals.filter(d => d.stage !== 'won' && d.stage !== 'lost').slice(0, 5);
+  const activeDeals = opportunities.filter(o => o.stage !== 'won' && o.stage !== 'lost').slice(0, 5);
   
   // Financial calculations
   const overdueIncomes = getOverdueIncomes();
@@ -467,15 +467,15 @@ export default function DashboardPage() {
                           <span 
                             className="px-2 py-1 text-xs font-medium rounded-full"
                             style={{ 
-                              backgroundColor: `${dealStageColors[deal.stage]?.color}20`, 
-                              color: dealStageColors[deal.stage]?.color 
+                              backgroundColor: `${opportunityStageColors[deal.stage]?.color}20`, 
+                              color: opportunityStageColors[deal.stage]?.color 
                             }}
                           >
-                            {dealStageColors[deal.stage]?.label || deal.stage}
+                            {opportunityStageColors[deal.stage]?.label || deal.stage}
                           </span>
                         </td>
                         <td className="px-6 py-4 font-medium text-gray-900">
-                          {formatCurrency(deal.amount || 0)}
+                          {formatCurrency(deal.finalAmount ?? deal.tentativeAmount ?? deal.estimatedAmountMax ?? 0)}
                         </td>
                         <td className="px-6 py-4">
                           <div className="flex items-center gap-2">

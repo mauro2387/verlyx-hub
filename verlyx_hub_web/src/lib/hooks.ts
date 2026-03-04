@@ -195,66 +195,6 @@ export function useContactMutations() {
 }
 
 // ==========================================
-// DEALS HOOKS
-// ==========================================
-export function useDeals() {
-  return useSupabaseData(
-    () => db.deals.getAll(),
-    []
-  );
-}
-
-export function useDeal(id: string) {
-  return useSupabaseData(
-    () => db.deals.getById(id),
-    [id]
-  );
-}
-
-export function useDealMutations() {
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const createDeal = async (data: Parameters<typeof db.deals.create>[0]) => {
-    setLoading(true);
-    setError(null);
-    const result = await db.deals.create(data);
-    setLoading(false);
-    if (result.error) setError(result.error.message);
-    return result;
-  };
-
-  const updateDeal = async (id: string, data: Parameters<typeof db.deals.update>[1]) => {
-    setLoading(true);
-    setError(null);
-    const result = await db.deals.update(id, data);
-    setLoading(false);
-    if (result.error) setError(result.error.message);
-    return result;
-  };
-
-  const updateDealStage = async (id: string, stage: string) => {
-    setLoading(true);
-    setError(null);
-    const result = await db.deals.update(id, { stage });
-    setLoading(false);
-    if (result.error) setError(result.error.message);
-    return result;
-  };
-
-  const deleteDeal = async (id: string) => {
-    setLoading(true);
-    setError(null);
-    const result = await db.deals.delete(id);
-    setLoading(false);
-    if (result.error) setError(result.error.message);
-    return result;
-  };
-
-  return { createDeal, updateDeal, updateDealStage, deleteDeal, loading, error };
-}
-
-// ==========================================
 // PAYMENTS HOOKS
 // ==========================================
 export function usePaymentLinks() {

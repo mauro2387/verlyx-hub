@@ -36,6 +36,7 @@ export default function AIAssistantPage() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [showSuggestions, setShowSuggestions] = useState(true);
   const [input, setInput] = useState('');
+  const [conversationId, setConversationId] = useState<string | null>(null);
 
   const initialMessages: UIMessage[] = [
     {
@@ -53,7 +54,13 @@ export default function AIAssistantPage() {
   const { messages, sendMessage, status, error: chatError, clearError } = useChat({
     transport: new DefaultChatTransport({
       api: '/api/ai/chat',
-      body: { userId: user?.id },
+      body: { userId: user?.id, conversationId },
+      fetch: async (url, init) => {
+        const response = await fetch(url, init);
+        const convId = response.headers.get('X-Conversation-Id');
+        if (convId && !conversationId) setConversationId(convId);
+        return response;
+      },
     }),
     messages: initialMessages,
     onFinish: () => {

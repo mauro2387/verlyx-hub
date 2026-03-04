@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { MainLayout, PageHeader } from '@/components/layout';
 import { Button, Card, CardContent, Badge, Avatar, Modal, Input, Textarea, Select, Loading, EmptyState } from '@/components/ui';
-import { useClientsStore, useContactActivitiesStore, useLeadScoresStore, useProjectsStore, useDealsStore } from '@/lib/store';
+import { useClientsStore, useContactActivitiesStore, useLeadScoresStore, useProjectsStore, useOpportunitiesStore } from '@/lib/store';
 import { ContactActivity, ContactActivityType, Client } from '@/lib/types';
 import { cn, formatDate, formatCurrency, formatRelativeTime } from '@/lib/utils';
 
@@ -46,7 +46,7 @@ export default function ClientDetailPage() {
   const { activities, isLoading: activitiesLoading, fetchByContact, createActivity, logCall, logEmail, logMeeting, logNote } = useContactActivitiesStore();
   const { getContactScore, recalculateScore } = useLeadScoresStore();
   const { projects, fetchProjects } = useProjectsStore();
-  const { deals, fetchDeals } = useDealsStore();
+  const { opportunities: deals, fetchOpportunities: fetchDeals } = useOpportunitiesStore();
 
   const [client, setClient] = useState<Client | null>(null);
   const [clientActivities, setClientActivities] = useState<ContactActivity[]>([]);
@@ -97,7 +97,7 @@ export default function ClientDetailPage() {
   const clientDeals = deals.filter(d => d.clientId === clientId);
   const totalRevenue = clientDeals
     .filter(d => d.stage === 'won')
-    .reduce((acc, d) => acc + (d.amount || 0), 0);
+    .reduce((acc, d) => acc + (d.finalAmount ?? d.tentativeAmount ?? d.estimatedAmountMax ?? 0), 0);
 
   // Handle quick activity logging
   const handleQuickLog = async () => {
@@ -615,7 +615,7 @@ export default function ClientDetailPage() {
                           <p className="text-sm text-gray-500">{deal.stage}</p>
                         </div>
                         <div className="text-right">
-                          <p className="font-semibold text-green-600">{formatCurrency(deal.amount || 0)}</p>
+                          <p className="font-semibold text-green-600">{formatCurrency(deal.finalAmount ?? deal.tentativeAmount ?? deal.estimatedAmountMax ?? 0)}</p>
                           <p className="text-xs text-gray-400">{deal.probability}% prob.</p>
                         </div>
                       </div>

@@ -432,13 +432,48 @@ export async function POST(req: Request) {
       );
     }
 
-    const { messages, userId } = await req.json();
+    const { messages, userId, conversationId } = await req.json();
 
     if (!messages || !Array.isArray(messages)) {
       return new Response(
         JSON.stringify({ error: 'Messages array required' }),
         { status: 400, headers: { 'Content-Type': 'application/json' } }
       );
+    }
+
+    // ── Persist user message to ai_conversations / ai_messages ──
+    let activeConversationId = conversationId || null;
+    const lastUserMsg = [...messages].reverse().find((m: { role: string }) => m.role === 'user');
+    if (userId && lastUserMsg) {
+      try {
+        // Create conversation if needed
+        if (!activeConversationId) {
+          const userText = lastUserMsg.parts
+            ?.filter((p: { type: string }) => p.type === 'text')
+            .map((p: { text: string }) => p.text)
+            .join(' ') || 'Nueva conversación';
+          const { data: conv } = await supabase
+            .from('ai_conversations')
+            .insert({ user_id: userId, title: userText.substring(0, 100) })
+            .select('id')
+            .single();
+          if (conv) activeConversationId = conv.id;
+        }
+        // Save user message
+        if (activeConversationId) {
+          const content = lastUserMsg.parts
+            ?.filter((p: { type: string }) => p.type === 'text')
+            .map((p: { text: string }) => p.text)
+            .join('\n') || '';
+          await supabase.from('ai_messages').insert({
+            conversation_id: activeConversationId,
+            role: 'user',
+            content,
+          });
+        }
+      } catch (e) {
+        console.warn('Failed to persist user message:', e);
+      }
     }
 
     // Build dynamic context from Supabase
@@ -475,9 +510,35 @@ INSTRUCCIONES:
       messages: modelMessages,
       tools: aiTools,
       stopWhen: stepCountIs(5),
+      async onFinish({ text, usage }) {
+        // Persist assistant response
+        if (activeConversationId && text) {
+          try {
+            await supabase.from('ai_messages').insert({
+              conversation_id: activeConversationId,
+              role: 'assistant',
+              content: text,
+              tokens_used: usage?.totalTokens || 0,
+              model: 'gpt-4.1',
+            });
+            // Update conversation title if it was just created (only 1 user msg)
+            await supabase
+              .from('ai_conversations')
+              .update({ updated_at: new Date().toISOString() })
+              .eq('id', activeConversationId);
+          } catch (e) {
+            console.warn('Failed to persist assistant message:', e);
+          }
+        }
+      },
     });
 
-    return result.toUIMessageStreamResponse();
+    const response = result.toUIMessageStreamResponse();
+    // Attach conversation ID in header so client can continue the thread
+    if (activeConversationId) {
+      response.headers.set('X-Conversation-Id', activeConversationId);
+    }
+    return response;
   } catch (error: unknown) {
     console.error('AI Chat Error:', error);
     const message = error instanceof Error ? error.message : 'Error del servidor';
