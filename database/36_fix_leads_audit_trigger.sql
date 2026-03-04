@@ -92,14 +92,16 @@ BEGIN
   -- Create opportunity
   INSERT INTO opportunities (
     my_company_id, client_id, title, description,
-    stage, priority, source, owner_user_id
+    stage, priority, source, owner_user_id,
+    next_action, next_action_date
   ) VALUES (
     v_lead.my_company_id, v_client_id,
     'Oportunidad: ' || v_lead.company_name,
     'Convertido desde Lead. ' || COALESCE('Contacto: ' || v_lead.contact_name || '. ', '') || COALESCE('Notas: ' || v_lead.notes, ''),
     'qualified', 'medium',
     v_lead.source::TEXT,
-    p_converted_by
+    p_converted_by,
+    'Primer contacto / seguimiento', CURRENT_DATE + INTERVAL '3 days'
   )
   RETURNING id INTO v_opportunity_id;
   
