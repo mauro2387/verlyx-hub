@@ -91,7 +91,7 @@ class _GeneratedPdfsScreenState extends ConsumerState<GeneratedPdfsScreen> {
       );
 
       // Usar directorio público de Downloads
-      final downloadsPath = '/storage/emulated/0/Download';
+      const downloadsPath = '/storage/emulated/0/Download';
       final directory = Directory(downloadsPath);
       
       // Crear directorio si no existe

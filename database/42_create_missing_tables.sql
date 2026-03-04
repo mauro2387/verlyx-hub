@@ -281,43 +281,45 @@ SELECT
     c.user_id,
     c.created_at,
     c.updated_at,
-    -- Lead score
-    COALESCE(ls.score, 0) AS lead_score,
+    -- Lead score (from contact_lead_scores)
+    COALESCE(ls.total_score, 0) AS lead_score,
     COALESCE(ls.engagement_score, 0) AS engagement_score,
-    -- Activity counts
+    -- Activity counts (from contact_activities)
     COALESCE(act.activity_count, 0) AS total_activities,
     act.last_activity_at,
-    -- Deal info
+    -- Deal info (from opportunities)
     COALESCE(d.deal_count, 0) AS total_deals,
     COALESCE(d.total_deal_value, 0) AS total_deal_value,
     COALESCE(d.won_deals, 0) AS won_deals,
-    -- Follow-up
+    -- Next follow-up (from contact_activities where follow_up_date is set)
     fu.next_follow_up_date,
-    fu.follow_up_type AS next_follow_up_type
+    fu.next_follow_up_type
 FROM contacts c
 LEFT JOIN LATERAL (
-    SELECT score, engagement_score
-    FROM lead_scores
-    WHERE contact_id = c.id
-    ORDER BY calculated_at DESC
+    SELECT total_score, engagement_score
+    FROM contact_lead_scores
+    WHERE contact_id = c.id AND my_company_id = c.my_company_id
     LIMIT 1
 ) ls ON TRUE
 LEFT JOIN LATERAL (
     SELECT COUNT(*) AS activity_count, MAX(activity_date) AS last_activity_at
-    FROM crm_activities
+    FROM contact_activities
     WHERE contact_id = c.id
 ) act ON TRUE
 LEFT JOIN LATERAL (
     SELECT COUNT(*) AS deal_count,
-           SUM(COALESCE(value, amount, 0)) AS total_deal_value,
+           SUM(COALESCE(final_amount, tentative_amount, estimated_amount_max, 0)) AS total_deal_value,
            COUNT(*) FILTER (WHERE stage = 'won') AS won_deals
-    FROM deals
+    FROM opportunities
     WHERE client_id = c.id
 ) d ON TRUE
 LEFT JOIN LATERAL (
-    SELECT follow_up_date AS next_follow_up_date, follow_up_type
-    FROM follow_ups
-    WHERE contact_id = c.id AND status = 'pending'
+    SELECT follow_up_date AS next_follow_up_date,
+           activity_type AS next_follow_up_type
+    FROM contact_activities
+    WHERE contact_id = c.id
+      AND follow_up_date IS NOT NULL
+      AND is_follow_up_done = FALSE
     ORDER BY follow_up_date ASC
     LIMIT 1
 ) fu ON TRUE;
@@ -326,27 +328,29 @@ LEFT JOIN LATERAL (
 DROP VIEW IF EXISTS public.pending_follow_ups;
 CREATE VIEW public.pending_follow_ups AS
 SELECT
-    f.id,
-    f.contact_id,
-    f.follow_up_date,
-    f.follow_up_type,
-    f.notes,
-    f.status,
-    f.my_company_id,
-    f.assigned_to,
+    ca.id,
+    ca.contact_id,
+    ca.my_company_id,
+    ca.follow_up_date,
+    ca.activity_type,
+    ca.subject,
+    ca.follow_up_notes,
+    ca.assigned_to,
+    ca.activity_date,
     c.first_name || ' ' || COALESCE(c.last_name, '') AS contact_name,
     c.email AS contact_email,
     c.phone AS contact_phone,
     c.type AS contact_type,
     CASE
-        WHEN f.follow_up_date < NOW() THEN 'overdue'
-        WHEN f.follow_up_date < NOW() + INTERVAL '24 hours' THEN 'urgent'
-        WHEN f.follow_up_date < NOW() + INTERVAL '7 days' THEN 'upcoming'
+        WHEN ca.follow_up_date < NOW() THEN 'overdue'
+        WHEN ca.follow_up_date < NOW() + INTERVAL '24 hours' THEN 'urgent'
+        WHEN ca.follow_up_date < NOW() + INTERVAL '7 days' THEN 'upcoming'
         ELSE 'scheduled'
     END AS urgency
-FROM follow_ups f
-JOIN contacts c ON c.id = f.contact_id
-WHERE f.status = 'pending';
+FROM contact_activities ca
+JOIN contacts c ON c.id = ca.contact_id
+WHERE ca.follow_up_date IS NOT NULL
+  AND ca.is_follow_up_done = FALSE;
 
 
 -- =============================================

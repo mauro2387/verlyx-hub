@@ -61,7 +61,7 @@ class AuthRepositoryImpl implements AuthRepository {
       final refreshToken = await tokenStorage.getRefreshToken();
       
       if (refreshToken == null) {
-        return Left(CacheFailure(message: 'No refresh token found'));
+        return Left(const CacheFailure(message: 'No refresh token found'));
       }
       
       final response = await apiService.refreshToken({

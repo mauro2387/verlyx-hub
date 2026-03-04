@@ -316,7 +316,10 @@ export const useClientsStore = create<ClientsState>((set, get) => ({
     if (data.status !== undefined) updates.status = data.status;
     else if (data.isActive !== undefined) updates.status = data.isActive ? 'active' : 'inactive';
     
-    await supabase.from('contacts').update(updates).eq('id', id);
+    const { error } = await supabase.from('contacts').update(updates).eq('id', id).select().single();
+    if (error) {
+      console.error('[updateClient] PATCH failed:', error.message, error.details, error.hint);
+    }
     get().fetchClients();
   },
   deleteClient: async (id) => {
@@ -2295,10 +2298,10 @@ interface ContactActivitiesState {
   markFollowUpDone: (id: string) => Promise<void>;
   
   // Quick logging
-  logCall: (contactId: string, subject: string, description?: string, durationMinutes?: number) => Promise<string | null>;
-  logEmail: (contactId: string, subject: string, description?: string) => Promise<string | null>;
-  logMeeting: (contactId: string, subject: string, description?: string, durationMinutes?: number) => Promise<string | null>;
-  logNote: (contactId: string, subject: string, description?: string) => Promise<string | null>;
+  logCall: (contactId: string, subject: string, description?: string, durationMinutes?: number, activityDate?: string) => Promise<string | null>;
+  logEmail: (contactId: string, subject: string, description?: string, activityDate?: string) => Promise<string | null>;
+  logMeeting: (contactId: string, subject: string, description?: string, durationMinutes?: number, activityDate?: string) => Promise<string | null>;
+  logNote: (contactId: string, subject: string, description?: string, activityDate?: string) => Promise<string | null>;
 }
 
 export const useContactActivitiesStore = create<ContactActivitiesState>((set, get) => ({
@@ -2389,7 +2392,7 @@ export const useContactActivitiesStore = create<ContactActivitiesState>((set, ge
   },
   
   // Quick logging methods
-  logCall: async (contactId, subject, description, durationMinutes) => {
+  logCall: async (contactId, subject, description, durationMinutes, activityDate) => {
     const companyId = useCompanyStore.getState().selectedCompanyId;
     if (!companyId) return null;
     
@@ -2397,26 +2400,62 @@ export const useContactActivitiesStore = create<ContactActivitiesState>((set, ge
       subject,
       description,
       durationMinutes,
+      ...(activityDate ? { activityDate: new Date(activityDate).toISOString() } : {}),
     });
     
-    if (data) await get().fetchActivities(contactId);
+    if (data) {
+      await get().fetchActivities(contactId);
+      // Also create calendar event so it appears in calendar
+      const eventStart = activityDate ? new Date(activityDate) : new Date();
+      const endDate = new Date(eventStart.getTime() + (durationMinutes || 15) * 60000);
+      await db.calendarEvents.create({
+        title: `📞 ${subject}`,
+        description: description || null,
+        event_type: 'call',
+        start_date: eventStart.toISOString(),
+        end_date: endDate.toISOString(),
+        all_day: false,
+        status: 'completed',
+        priority: 'medium',
+        related_type: 'client',
+        related_id: contactId,
+      });
+    }
     return data;
   },
   
-  logEmail: async (contactId, subject, description) => {
+  logEmail: async (contactId, subject, description, activityDate) => {
     const companyId = useCompanyStore.getState().selectedCompanyId;
     if (!companyId) return null;
     
     const { data } = await crm.activities.logEmail(companyId, contactId, {
       subject,
       description,
+      ...(activityDate ? { activityDate: new Date(activityDate).toISOString() } : {}),
     });
     
-    if (data) await get().fetchActivities(contactId);
+    if (data) {
+      await get().fetchActivities(contactId);
+      // Also create calendar event
+      const eventStart = activityDate ? new Date(activityDate) : new Date();
+      const endDate = new Date(eventStart.getTime() + 15 * 60000);
+      await db.calendarEvents.create({
+        title: `📧 ${subject}`,
+        description: description || null,
+        event_type: 'other',
+        start_date: eventStart.toISOString(),
+        end_date: endDate.toISOString(),
+        all_day: false,
+        status: 'completed',
+        priority: 'medium',
+        related_type: 'client',
+        related_id: contactId,
+      });
+    }
     return data;
   },
   
-  logMeeting: async (contactId, subject, description, durationMinutes) => {
+  logMeeting: async (contactId, subject, description, durationMinutes, activityDate) => {
     const companyId = useCompanyStore.getState().selectedCompanyId;
     if (!companyId) return null;
     
@@ -2424,19 +2463,38 @@ export const useContactActivitiesStore = create<ContactActivitiesState>((set, ge
       subject,
       description,
       durationMinutes,
+      ...(activityDate ? { activityDate: new Date(activityDate).toISOString() } : {}),
     });
     
-    if (data) await get().fetchActivities(contactId);
+    if (data) {
+      await get().fetchActivities(contactId);
+      // Also create calendar event
+      const eventStart = activityDate ? new Date(activityDate) : new Date();
+      const endDate = new Date(eventStart.getTime() + (durationMinutes || 60) * 60000);
+      await db.calendarEvents.create({
+        title: `🤝 ${subject}`,
+        description: description || null,
+        event_type: 'meeting',
+        start_date: eventStart.toISOString(),
+        end_date: endDate.toISOString(),
+        all_day: false,
+        status: 'confirmed',
+        priority: 'medium',
+        related_type: 'client',
+        related_id: contactId,
+      });
+    }
     return data;
   },
   
-  logNote: async (contactId, subject, description) => {
+  logNote: async (contactId, subject, description, activityDate) => {
     const companyId = useCompanyStore.getState().selectedCompanyId;
     if (!companyId) return null;
     
     const { data } = await crm.activities.logNote(companyId, contactId, {
       subject,
       description,
+      ...(activityDate ? { activityDate: new Date(activityDate).toISOString() } : {}),
     });
     
     if (data) await get().fetchActivities(contactId);
@@ -3115,6 +3173,7 @@ export const useOpportunitiesStore = create<OpportunitiesState>((set, get) => ({
       .from('opportunities')
       .select('*')
       .eq('my_company_id', companyId)
+      .eq('is_active', true)
       .order('created_at', { ascending: false });
 
     if (!error && data) {

@@ -1845,6 +1845,7 @@ export const crm = {
       subject: string;
       description?: string;
       direction?: CommunicationDirection;
+      activityDate?: string;
     }) {
       return this.create({
         myCompanyId: companyId,
@@ -1875,6 +1876,7 @@ export const crm = {
     async logNote(companyId: string, contactId: string, params: {
       subject: string;
       description?: string;
+      activityDate?: string;
     }) {
       return this.create({
         myCompanyId: companyId,
@@ -1941,9 +1943,9 @@ export const crm = {
         .select('*')
         .eq('my_company_id', companyId)
         .eq('contact_id', contactId)
-        .single();
+        .maybeSingle();
       
-      if (error && error.code !== 'PGRST116') return { data: null, error };
+      if (error) return { data: null, error };
       if (!data) return { data: null, error: null };
       
       const score: ClientLeadScore = {

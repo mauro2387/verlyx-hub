@@ -105,18 +105,19 @@ export default function ClientDetailPage() {
     setIsSubmitting(true);
 
     try {
+      const dateVal = activityForm.followUpDate || undefined;
       switch (activityType) {
         case 'call':
-          await logCall(clientId, activityForm.subject, activityForm.description);
+          await logCall(clientId, activityForm.subject, activityForm.description, undefined, dateVal);
           break;
         case 'email':
-          await logEmail(clientId, activityForm.subject, activityForm.description);
+          await logEmail(clientId, activityForm.subject, activityForm.description, dateVal);
           break;
         case 'meeting':
-          await logMeeting(clientId, activityForm.subject, activityForm.description);
+          await logMeeting(clientId, activityForm.subject, activityForm.description, undefined, dateVal);
           break;
         case 'note':
-          await logNote(clientId, activityForm.subject, activityForm.description);
+          await logNote(clientId, activityForm.subject, activityForm.description, dateVal);
           break;
       }
       
@@ -786,7 +787,7 @@ export default function ClientDetailPage() {
           />
 
           <Input
-            label="Fecha de Seguimiento (opcional)"
+            label="Fecha y Hora del Evento"
             type="datetime-local"
             value={activityForm.followUpDate}
             onChange={(e) => setActivityForm({ ...activityForm, followUpDate: e.target.value })}
