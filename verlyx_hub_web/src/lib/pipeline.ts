@@ -53,6 +53,46 @@ export async function executeDealWonPipeline(deal: Deal): Promise<PipelineResult
     `Deal "${deal.title}" ganado — ejecutando automatizaciones...`
   );
 
+  // ---- Step 0: Convert contact to client ----
+  try {
+    if (deal.clientId) {
+      const { error } = await supabase
+        .from('contacts')
+        .update({ type: 'client', status: 'won' })
+        .eq('id', deal.clientId);
+
+      if (error) throw error;
+      steps.push({ step: 'convert_to_client', success: true, entityId: deal.clientId });
+    } else {
+      // No contact linked — create one
+      const { data: newContact, error } = await supabase
+        .from('contacts')
+        .insert({
+          first_name: clientName.split(' ')[0] || clientName,
+          last_name: clientName.split(' ').slice(1).join(' ') || '',
+          type: 'client',
+          status: 'won',
+          my_company_id: companyId,
+          user_id: userId,
+        })
+        .select('id')
+        .single();
+
+      if (error) throw error;
+      steps.push({ step: 'convert_to_client', success: true, entityId: newContact?.id });
+
+      // Link the new contact back to the deal
+      if (newContact?.id) {
+        await supabase
+          .from('deals')
+          .update({ client_id: newContact.id })
+          .eq('id', deal.id);
+      }
+    }
+  } catch (err: any) {
+    steps.push({ step: 'convert_to_client', success: false, error: err?.message || 'Error convirtiendo contacto a cliente' });
+  }
+
   // ---- Step 1: Create Income ----
   try {
     const dueDate = new Date();
@@ -195,7 +235,7 @@ export async function executeDealWonPipeline(deal: Deal): Promise<PipelineResult
   if (allSuccess) {
     toast.success(
       `Deal "${deal.title}" — Pipeline completado`,
-      `Ingreso, proyecto, tarea y actividad CRM creados automáticamente.`
+      `Contacto convertido a cliente, ingreso, proyecto, tarea y actividad CRM creados automáticamente.`
     );
   } else {
     const failedSteps = steps.filter(s => !s.success).map(s => s.step).join(', ');
