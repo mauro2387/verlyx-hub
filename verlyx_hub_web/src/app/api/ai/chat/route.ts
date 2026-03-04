@@ -7,7 +7,7 @@
 // ============================================================
 
 import { createOpenAI } from '@ai-sdk/openai';
-import { streamText, tool, stepCountIs } from 'ai';
+import { streamText, tool, stepCountIs, convertToModelMessages } from 'ai';
 import { z } from 'zod';
 import { createClient } from '@supabase/supabase-js';
 
@@ -466,10 +466,13 @@ INSTRUCCIONES:
 - Para oportunidades de ventas, usa get_opportunities_pipeline
 - Si el usuario quiere convertir un lead a oportunidad, explica que el lead debe estar en estado "responded"`;
 
+    // Convert UIMessages from client to ModelMessages for streamText
+    const modelMessages = await convertToModelMessages(messages);
+
     const result = streamText({
       model: openai('gpt-4.1'),
       system: systemPrompt,
-      messages,
+      messages: modelMessages,
       tools: aiTools,
       stopWhen: stepCountIs(5),
     });
