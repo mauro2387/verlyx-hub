@@ -10,6 +10,7 @@ export type ContactStatus = 'new' | 'contacted' | 'qualified' | 'negotiation' | 
 
 export interface Client {
   id: string;
+  myCompanyId?: string | null;
   name: string;
   firstName?: string;
   lastName?: string;

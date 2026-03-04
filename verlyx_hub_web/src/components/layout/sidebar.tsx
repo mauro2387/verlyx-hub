@@ -306,7 +306,7 @@ export function Sidebar() {
           {/* Company Selector */}
           {companies.length > 0 && (
             <div className="px-4 py-3 border-b border-gray-100">
-              <label className="text-xs font-medium text-gray-500 mb-1 block">Empresa activa</label>
+              <label className="text-xs font-medium text-gray-500 mb-1 block">Empresa por defecto</label>
               <div className="relative">
                 <select
                   value={selectedCompanyId || ''}

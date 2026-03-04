@@ -221,24 +221,18 @@ export const useClientsStore = create<ClientsState>((set, get) => ({
     isActive: null,
   },
   fetchClients: async () => {
-    const companyId = useCompanyStore.getState().selectedCompanyId;
     set({ isLoading: true });
     
-    // Query contacts scoped by my_company_id (matching leads/opportunities pattern)
-    let query = supabase
+    // Query all contacts across all companies (consolidated view)
+    const { data, error } = await supabase
       .from('contacts')
       .select('*')
       .order('created_at', { ascending: false });
     
-    if (companyId) {
-      query = query.eq('my_company_id', companyId);
-    }
-    
-    const { data, error } = await query;
-    
     if (data && !error) {
       const clients: Client[] = data.map((c: any) => ({
         id: c.id,
+        myCompanyId: c.my_company_id || null,
         name: `${c.first_name} ${c.last_name || ''}`.trim(),
         firstName: c.first_name,
         lastName: c.last_name || undefined,
@@ -383,6 +377,7 @@ export const useProjectsStore = create<ProjectsState>((set, get) => ({
     if (data && !error) {
       const projects = data.map(p => ({
         id: p.id,
+        myCompanyId: (p as any).my_company_id || null,
         name: p.name,
         description: p.description || '',
         status: p.status as ProjectStatus,
@@ -526,6 +521,7 @@ export const useTasksStore = create<TasksState>((set, get) => ({
     if (data && data.length > 0 && !error) {
       const tasks = data.map(t => ({
         id: t.id,
+        myCompanyId: (t as any).my_company_id || null,
         title: t.title,
         description: t.description || '',
         status: t.status as TaskStatus,
@@ -660,8 +656,9 @@ export const useDealsStore = create<DealsState>((set, get) => ({
     const { data, error } = await db.deals.getAll();
     
     if (data && data.length > 0 && !error) {
-      const deals: Deal[] = data.map(d => ({
+      const deals: Deal[] = data.map((d: any) => ({
         id: d.id,
+        myCompanyId: d.my_company_id || null,
         title: d.name || '',
         name: d.name,
         description: d.description || '',
@@ -1483,11 +1480,10 @@ export const useCategoriesStore = create<CategoriesState>((set, get) => ({
   isLoading: false,
   fetchCategories: async () => {
     set({ isLoading: true });
-    const companyId = useCompanyStore.getState().selectedCompanyId;
-    const { data, error } = await financial.categories.getAll(companyId || undefined);
+    const { data, error } = await financial.categories.getAll();
     
     if (data && !error) {
-      const categories: Category[] = data.map(c => ({
+      const categories: Category[] = data.map((c: any) => ({
         id: c.id,
         myCompanyId: c.my_company_id,
         name: c.name,
@@ -1563,8 +1559,7 @@ export const useAccountsStore = create<AccountsState>((set, get) => ({
   isLoading: false,
   fetchAccounts: async () => {
     set({ isLoading: true });
-    const companyId = useCompanyStore.getState().selectedCompanyId;
-    const { data, error } = await financial.accounts.getAll(companyId || undefined);
+    const { data, error } = await financial.accounts.getAll();
     
     if (data && !error) {
       const accounts: Account[] = data.map(a => ({
@@ -1672,10 +1667,9 @@ export const useExpensesStore = create<ExpensesState>((set, get) => ({
   },
   fetchExpenses: async () => {
     set({ isLoading: true });
-    const companyId = useCompanyStore.getState().selectedCompanyId;
     const { filter } = get();
     
-    const { data, error } = await financial.expenses.getAll(companyId || undefined, {
+    const { data, error } = await financial.expenses.getAll(undefined, {
       startDate: filter.startDate || undefined,
       endDate: filter.endDate || undefined,
       categoryId: filter.categoryId || undefined,
@@ -1863,10 +1857,9 @@ export const useIncomesStore = create<IncomesState>((set, get) => ({
   },
   fetchIncomes: async () => {
     set({ isLoading: true });
-    const companyId = useCompanyStore.getState().selectedCompanyId;
     const { filter } = get();
     
-    const { data, error } = await financial.incomes.getAll(companyId || undefined, {
+    const { data, error } = await financial.incomes.getAll(undefined, {
       startDate: filter.startDate || undefined,
       endDate: filter.endDate || undefined,
       categoryId: filter.categoryId || undefined,
@@ -2099,8 +2092,7 @@ export const useBudgetsStore = create<BudgetsState>((set, get) => ({
   isLoading: false,
   fetchBudgets: async () => {
     set({ isLoading: true });
-    const companyId = useCompanyStore.getState().selectedCompanyId;
-    const { data, error } = await financial.budgets.getAll(companyId || undefined);
+    const { data, error } = await financial.budgets.getAll();
     
     if (data && !error) {
       const budgets: Budget[] = data.map(b => ({
@@ -2205,23 +2197,18 @@ export const useFinancialStatsStore = create<FinancialStatsState>((set, get) => 
   isLoading: false,
   fetchStats: async () => {
     set({ isLoading: true });
-    const companyId = useCompanyStore.getState().selectedCompanyId;
-    if (!companyId) {
-      set({ stats: null, isLoading: false });
-      return;
-    }
     
     const currentYear = new Date().getFullYear();
     
-    // Get P&L data
-    const { data: plData } = await financial.reports.getProfitLoss(companyId, currentYear);
+    // Get P&L data (all companies consolidated)
+    const { data: plData } = await financial.reports.getProfitLoss(undefined, currentYear);
     
     // Get pending/overdue incomes
-    const { data: pendingIncomes } = await financial.incomes.getPendingIncomes(companyId);
-    const { data: overdueIncomes } = await financial.incomes.getOverdueIncomes(companyId);
+    const { data: pendingIncomes } = await financial.incomes.getPendingIncomes();
+    const { data: overdueIncomes } = await financial.incomes.getOverdueIncomes();
     
     // Get total balance
-    const { data: totalBalance } = await financial.accounts.getTotalBalance(companyId);
+    const { data: totalBalance } = await financial.accounts.getTotalBalance();
     
     const pendingAmount = (pendingIncomes || []).reduce((sum, i) => sum + i.amount, 0);
     const overdueAmount = (overdueIncomes || []).reduce((sum, i) => sum + i.amount, 0);
@@ -2243,10 +2230,7 @@ export const useFinancialStatsStore = create<FinancialStatsState>((set, get) => 
     });
   },
   getCashFlow: async (year) => {
-    const companyId = useCompanyStore.getState().selectedCompanyId;
-    if (!companyId) return [];
-    
-    const { data } = await financial.reports.getCashFlow(companyId, year);
+    const { data } = await financial.reports.getCashFlow(undefined, year);
     return data || [];
   },
 }));
@@ -2310,12 +2294,9 @@ export const useContactActivitiesStore = create<ContactActivitiesState>((set, ge
   error: null,
   
   fetchActivities: async (contactId) => {
-    const companyId = useCompanyStore.getState().selectedCompanyId;
-    if (!companyId) return;
-    
     set({ isLoading: true, error: null });
     
-    const { data, error } = await crm.activities.getAll(companyId, { 
+    const { data, error } = await crm.activities.getAll(undefined, { 
       contactId,
       limit: 100 
     });
@@ -2328,10 +2309,7 @@ export const useContactActivitiesStore = create<ContactActivitiesState>((set, ge
   },
   
   fetchByContact: async (contactId) => {
-    const companyId = useCompanyStore.getState().selectedCompanyId;
-    if (!companyId) return [];
-    
-    const { data } = await crm.activities.getByContact(companyId, contactId, 50);
+    const { data } = await crm.activities.getByContact(undefined, contactId, 50);
     return data || [];
   },
   
@@ -2529,12 +2507,9 @@ export const useLeadScoresStore = create<LeadScoresState>((set, get) => ({
   error: null,
   
   fetchScores: async (filters) => {
-    const companyId = useCompanyStore.getState().selectedCompanyId;
-    if (!companyId) return;
-    
     set({ isLoading: true, error: null });
     
-    const { data, error } = await crm.scores.getAll(companyId, filters);
+    const { data, error } = await crm.scores.getAll(undefined, filters);
     
     set({
       scores: data || [],
@@ -2544,10 +2519,7 @@ export const useLeadScoresStore = create<LeadScoresState>((set, get) => ({
   },
   
   getContactScore: async (contactId) => {
-    const companyId = useCompanyStore.getState().selectedCompanyId;
-    if (!companyId) return null;
-    
-    const { data } = await crm.scores.getByContact(companyId, contactId);
+    const { data } = await crm.scores.getByContact(undefined, contactId);
     return data;
   },
   
@@ -2566,10 +2538,7 @@ export const useLeadScoresStore = create<LeadScoresState>((set, get) => ({
   },
   
   getHotLeads: async (limit = 10) => {
-    const companyId = useCompanyStore.getState().selectedCompanyId;
-    if (!companyId) return [];
-    
-    const { data } = await crm.scores.getHotLeads(companyId, limit);
+    const { data } = await crm.scores.getHotLeads(undefined, limit);
     return data || [];
   },
   
@@ -2634,12 +2603,9 @@ export const useClientSegmentsStore = create<ClientSegmentsState>((set, get) => 
   error: null,
   
   fetchSegments: async () => {
-    const companyId = useCompanyStore.getState().selectedCompanyId;
-    if (!companyId) return;
-    
     set({ isLoading: true, error: null });
     
-    const { data, error } = await crm.segments.getAll(companyId);
+    const { data, error } = await crm.segments.getAll();
     
     set({
       segments: data || [],
@@ -2745,12 +2711,9 @@ export const usePendingFollowUpsStore = create<PendingFollowUpsState>((set, get)
   error: null,
   
   fetchFollowUps: async () => {
-    const companyId = useCompanyStore.getState().selectedCompanyId;
-    if (!companyId) return;
-    
     set({ isLoading: true, error: null });
     
-    const { data, error } = await crm.activities.getPendingFollowUps(companyId);
+    const { data, error } = await crm.activities.getPendingFollowUps();
     
     set({
       followUps: data || [],
@@ -2801,12 +2764,9 @@ export const useCRMMetricsStore = create<CRMMetricsState>((set) => ({
   isLoading: false,
   
   fetchMetrics: async () => {
-    const companyId = useCompanyStore.getState().selectedCompanyId;
-    if (!companyId) return;
-    
     set({ isLoading: true });
     
-    const metrics = await crm.summary.getDashboardMetrics(companyId);
+    const metrics = await crm.summary.getDashboardMetrics();
     
     set({
       ...metrics,
@@ -2856,14 +2816,10 @@ export const useLeadsStore = create<LeadsState>((set, get) => ({
   filter: {},
 
   fetchLeads: async () => {
-    const companyId = useCompanyStore.getState().selectedCompanyId;
-    if (!companyId) return;
-
     set({ isLoading: true });
     const { data, error } = await supabase
       .from('leads')
       .select('*')
-      .eq('my_company_id', companyId)
       .order('created_at', { ascending: false });
 
     if (!error && data) {
@@ -2935,13 +2891,9 @@ export const useLeadsStore = create<LeadsState>((set, get) => ({
   },
 
   fetchCampaigns: async () => {
-    const companyId = useCompanyStore.getState().selectedCompanyId;
-    if (!companyId) return;
-
     const { data } = await supabase
       .from('prospecting_campaigns')
       .select('*')
-      .eq('my_company_id', companyId)
       .order('created_at', { ascending: false });
 
     if (data) {
@@ -3265,14 +3217,10 @@ export const useOpportunitiesStore = create<OpportunitiesState>((set, get) => ({
   filter: {},
 
   fetchOpportunities: async () => {
-    const companyId = useCompanyStore.getState().selectedCompanyId;
-    if (!companyId) return;
-
     set({ isLoading: true });
     const { data, error } = await supabase
       .from('opportunities')
       .select('*')
-      .eq('my_company_id', companyId)
       .eq('is_active', true)
       .order('created_at', { ascending: false });
 

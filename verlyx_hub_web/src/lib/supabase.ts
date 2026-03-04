@@ -1410,31 +1410,23 @@ export const financial = {
 
   // Financial Reports
   reports: {
-    async getCashFlow(companyId: string, year: number, month?: number) {
+    async getCashFlow(companyId?: string, year?: number, month?: number) {
+      const yr = year ?? new Date().getFullYear();
       // Get monthly cash flow data
       const months = month !== undefined ? [month] : [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
       const cashFlow: { month: number; income: number; expense: number; net: number }[] = [];
       
       for (const m of months) {
-        const startDate = new Date(year, m, 1).toISOString().split('T')[0];
-        const endDate = new Date(year, m + 1, 0).toISOString().split('T')[0];
+        const startDate = new Date(yr, m, 1).toISOString().split('T')[0];
+        const endDate = new Date(yr, m + 1, 0).toISOString().split('T')[0];
         
-        const [expensesRes, incomesRes] = await Promise.all([
-          supabase
-            .from('expenses')
-            .select('amount')
-            .eq('my_company_id', companyId)
-            .gte('payment_date', startDate)
-            .lte('payment_date', endDate)
-            .eq('status', 'paid'),
-          supabase
-            .from('incomes')
-            .select('amount')
-            .eq('my_company_id', companyId)
-            .gte('payment_date', startDate)
-            .lte('payment_date', endDate)
-            .eq('status', 'received'),
-        ]);
+        let expQ = supabase.from('expenses').select('amount').gte('payment_date', startDate).lte('payment_date', endDate).eq('status', 'paid');
+        let incQ = supabase.from('incomes').select('amount').gte('payment_date', startDate).lte('payment_date', endDate).eq('status', 'received');
+        if (companyId) {
+          expQ = expQ.eq('my_company_id', companyId);
+          incQ = incQ.eq('my_company_id', companyId);
+        }
+        const [expensesRes, incomesRes] = await Promise.all([expQ, incQ]);
         
         const expense = (expensesRes.data || []).reduce((sum, e) => sum + (e.amount || 0), 0);
         const income = (incomesRes.data || []).reduce((sum, i) => sum + (i.amount || 0), 0);
@@ -1445,14 +1437,15 @@ export const financial = {
       return { data: cashFlow, error: null };
     },
     
-    async getExpensesByCategory(companyId: string, startDate: string, endDate: string) {
-      const { data, error } = await supabase
+    async getExpensesByCategory(companyId?: string, startDate?: string, endDate?: string) {
+      let query = supabase
         .from('expenses')
         .select('amount, category:categories(id, name, color, icon)')
-        .eq('my_company_id', companyId)
-        .gte('payment_date', startDate)
-        .lte('payment_date', endDate)
         .eq('status', 'paid');
+      if (companyId) query = query.eq('my_company_id', companyId);
+      if (startDate) query = query.gte('payment_date', startDate);
+      if (endDate) query = query.lte('payment_date', endDate);
+      const { data, error } = await query;
       
       if (error || !data) return { data: [], error };
       
@@ -1474,14 +1467,15 @@ export const financial = {
       return { data: Object.values(grouped).sort((a, b) => b.amount - a.amount), error: null };
     },
     
-    async getIncomesByCategory(companyId: string, startDate: string, endDate: string) {
-      const { data, error } = await supabase
+    async getIncomesByCategory(companyId?: string, startDate?: string, endDate?: string) {
+      let query = supabase
         .from('incomes')
         .select('amount, category:categories(id, name, color, icon)')
-        .eq('my_company_id', companyId)
-        .gte('payment_date', startDate)
-        .lte('payment_date', endDate)
         .eq('status', 'received');
+      if (companyId) query = query.eq('my_company_id', companyId);
+      if (startDate) query = query.gte('payment_date', startDate);
+      if (endDate) query = query.lte('payment_date', endDate);
+      const { data, error } = await query;
       
       if (error || !data) return { data: [], error };
       
@@ -1503,8 +1497,8 @@ export const financial = {
       return { data: Object.values(grouped).sort((a, b) => b.amount - a.amount), error: null };
     },
     
-    async getProfitLoss(companyId: string, year: number) {
-      const cashFlow = await financial.reports.getCashFlow(companyId, year);
+    async getProfitLoss(companyId?: string, year?: number) {
+      const cashFlow = await financial.reports.getCashFlow(companyId, year ?? new Date().getFullYear());
       if (!cashFlow.data) return { data: null, error: cashFlow.error };
       
       const totalIncome = cashFlow.data.reduce((sum, m) => sum + m.income, 0);
@@ -1587,7 +1581,7 @@ export const crm = {
   // CONTACT ACTIVITIES
   // ==========================================
   activities: {
-    async getAll(companyId: string, filters?: {
+    async getAll(companyId?: string, filters?: {
       contactId?: string;
       activityType?: ContactActivityType;
       startDate?: string;
@@ -1597,8 +1591,11 @@ export const crm = {
       let query = supabase
         .from('contact_activities')
         .select('*')
-        .eq('my_company_id', companyId)
         .order('activity_date', { ascending: false });
+      
+      if (companyId) {
+        query = query.eq('my_company_id', companyId);
+      }
       
       if (filters?.contactId) {
         query = query.eq('contact_id', filters.contactId);
@@ -1650,7 +1647,7 @@ export const crm = {
       return { data: activities, error: null };
     },
     
-    async getByContact(companyId: string, contactId: string, limit: number = 50) {
+    async getByContact(companyId?: string, contactId?: string, limit: number = 50) {
       return this.getAll(companyId, { contactId, limit });
     },
     
@@ -1794,12 +1791,15 @@ export const crm = {
       return this.update(id, { isFollowUpDone: true });
     },
     
-    async getPendingFollowUps(companyId: string) {
-      const { data, error } = await supabase
+    async getPendingFollowUps(companyId?: string) {
+      let query = supabase
         .from('pending_follow_ups')
         .select('*')
-        .eq('my_company_id', companyId)
         .order('follow_up_date', { ascending: true });
+      if (companyId) {
+        query = query.eq('my_company_id', companyId);
+      }
+      const { data, error } = await query;
       
       if (error) return { data: null, error };
       
@@ -1892,7 +1892,7 @@ export const crm = {
   // LEAD SCORES
   // ==========================================
   scores: {
-    async getAll(companyId: string, filters?: {
+    async getAll(companyId?: string, filters?: {
       temperature?: string;
       minScore?: number;
       maxScore?: number;
@@ -1900,8 +1900,11 @@ export const crm = {
       let query = supabase
         .from('contact_lead_scores')
         .select('*')
-        .eq('my_company_id', companyId)
         .order('total_score', { ascending: false });
+      
+      if (companyId) {
+        query = query.eq('my_company_id', companyId);
+      }
       
       if (filters?.temperature) {
         query = query.eq('temperature', filters.temperature);
@@ -1937,12 +1940,13 @@ export const crm = {
       return { data: scores, error: null };
     },
     
-    async getByContact(companyId: string, contactId: string) {
-      const { data, error } = await supabase
+    async getByContact(companyId?: string, contactId?: string) {
+      let query = supabase
         .from('contact_lead_scores')
-        .select('*')
-        .eq('my_company_id', companyId)
-        .eq('contact_id', contactId)
+        .select('*');
+      if (companyId) query = query.eq('my_company_id', companyId);
+      if (contactId) query = query.eq('contact_id', contactId);
+      const { data, error } = await query
         .maybeSingle();
       
       if (error) return { data: null, error };
@@ -1978,17 +1982,18 @@ export const crm = {
       return { data, error };
     },
     
-    async getHotLeads(companyId: string, limit: number = 10) {
-      const { data, error } = await supabase
+    async getHotLeads(companyId?: string, limit: number = 10) {
+      let query = supabase
         .from('contact_lead_scores')
         .select(`
           *,
           contacts (id, first_name, last_name, email, phone, company)
         `)
-        .eq('my_company_id', companyId)
         .in('temperature', ['hot', 'very_hot'])
         .order('total_score', { ascending: false })
         .limit(limit);
+      if (companyId) query = query.eq('my_company_id', companyId);
+      const { data, error } = await query;
       
       return { data, error };
     },
@@ -1998,13 +2003,14 @@ export const crm = {
   // CONTACT SEGMENTS
   // ==========================================
   segments: {
-    async getAll(companyId: string) {
-      const { data, error } = await supabase
+    async getAll(companyId?: string) {
+      let query = supabase
         .from('contact_segments')
         .select('*')
-        .eq('my_company_id', companyId)
         .eq('is_active', true)
         .order('name');
+      if (companyId) query = query.eq('my_company_id', companyId);
+      const { data, error } = await query;
       
       if (error) return { data: null, error };
       
@@ -2258,26 +2264,16 @@ export const crm = {
       return { data: summaries, error: null };
     },
     
-    async getDashboardMetrics(companyId: string) {
-      const [scoresResult, followUpsResult, activitiesResult] = await Promise.all([
-        // Hot leads count
-        supabase
-          .from('contact_lead_scores')
-          .select('id', { count: 'exact' })
-          .eq('my_company_id', companyId)
-          .in('temperature', ['hot', 'very_hot']),
-        // Pending follow-ups count
-        supabase
-          .from('pending_follow_ups')
-          .select('id', { count: 'exact' })
-          .eq('my_company_id', companyId),
-        // Activities this week
-        supabase
-          .from('contact_activities')
-          .select('id', { count: 'exact' })
-          .eq('my_company_id', companyId)
-          .gte('activity_date', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()),
-      ]);
+    async getDashboardMetrics(companyId?: string) {
+      let scoresQ = supabase.from('contact_lead_scores').select('id', { count: 'exact' }).in('temperature', ['hot', 'very_hot']);
+      let followUpsQ = supabase.from('pending_follow_ups').select('id', { count: 'exact' });
+      let activitiesQ = supabase.from('contact_activities').select('id', { count: 'exact' }).gte('activity_date', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString());
+      if (companyId) {
+        scoresQ = scoresQ.eq('my_company_id', companyId);
+        followUpsQ = followUpsQ.eq('my_company_id', companyId);
+        activitiesQ = activitiesQ.eq('my_company_id', companyId);
+      }
+      const [scoresResult, followUpsResult, activitiesResult] = await Promise.all([scoresQ, followUpsQ, activitiesQ]);
       
       return {
         hotLeadsCount: scoresResult.count || 0,

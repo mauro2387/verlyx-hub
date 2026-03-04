@@ -63,17 +63,15 @@ export default function PulsarMoonPage() {
   // Load projects from Supabase or demo data
   useEffect(() => {
     loadProjects();
-  }, [selectedCompanyId]);
+  }, []);
 
   const loadProjects = async () => {
-    if (!selectedCompanyId) return;
     try {
       setLoading(true);
       const { data, error } = await supabase
         .from('projects')
         .select('*')
         .eq('business_unit', 'pulsarmoon')
-        .eq('my_company_id', selectedCompanyId)
         .order('created_at', { ascending: false });
 
       if (error) throw error;

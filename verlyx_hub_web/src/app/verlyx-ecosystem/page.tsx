@@ -94,19 +94,16 @@ export default function VerlyxEcosystemPage() {
   // Load data on mount
   useEffect(() => {
     loadData();
-  }, [selectedCompanyId, activeModule]);
+  }, [activeModule]);
 
   const loadData = async () => {
     try {
       setLoading(true);
 
-      if (!selectedCompanyId) return;
-
       if (activeModule === 'buildings') {
         const { data, error } = await supabase
           .from('buildings')
           .select('*')
-          .eq('my_company_id', selectedCompanyId)
           .order('created_at', { ascending: false });
 
         if (error) throw error;
@@ -138,7 +135,6 @@ export default function VerlyxEcosystemPage() {
         const { data, error } = await supabase
           .from('merchants')
           .select('*')
-          .eq('my_company_id', selectedCompanyId)
           .order('created_at', { ascending: false });
 
         if (error) throw error;

@@ -3,7 +3,7 @@
 import { useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { MainLayout, PageHeader } from '@/components/layout';
-import { StatCard, Card, CardContent, ProgressBar, Badge, Loading } from '@/components/ui';
+import { StatCard, Card, CardContent, ProgressBar, Badge, Loading, CompanyBadge } from '@/components/ui';
 import { 
   useDashboardStore, 
   useProjectsStore, 
@@ -351,8 +351,11 @@ export default function DashboardPage() {
                     className="block px-6 py-4 hover:bg-gray-50 transition-colors"
                   >
                     <div className="flex items-center justify-between mb-2">
-                      <h3 className="font-medium text-gray-900 truncate">{project.name}</h3>
-                      <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${projectStatusColors[project.status]?.bg} ${projectStatusColors[project.status]?.text}`}>
+                      <div className="flex items-center gap-2 min-w-0 flex-1">
+                        <h3 className="font-medium text-gray-900 truncate">{project.name}</h3>
+                        <CompanyBadge companyId={project.myCompanyId} size="xs" />
+                      </div>
+                      <span className={`ml-2 px-2 py-0.5 text-xs font-medium rounded-full ${projectStatusColors[project.status]?.bg} ${projectStatusColors[project.status]?.text}`}>
                         {projectStatusColors[project.status]?.label || project.status}
                       </span>
                     </div>
@@ -382,7 +385,10 @@ export default function DashboardPage() {
                   <div key={task.id} className="px-6 py-4 hover:bg-gray-50 transition-colors">
                     <div className="flex items-start justify-between">
                       <div className="flex-1 min-w-0">
-                        <h3 className="font-medium text-gray-900 truncate">{task.title}</h3>
+                        <div className="flex items-center gap-2">
+                          <h3 className="font-medium text-gray-900 truncate">{task.title}</h3>
+                          <CompanyBadge companyId={task.myCompanyId} size="xs" />
+                        </div>
                         <p className="text-sm text-gray-500 mt-1 truncate">{task.description}</p>
                       </div>
                       <span className={`ml-3 px-2 py-0.5 text-xs font-medium rounded-full ${taskStatusColors[task.status]?.bg} ${taskStatusColors[task.status]?.text}`}>
@@ -460,7 +466,10 @@ export default function DashboardPage() {
                     {activeDeals.map((deal) => (
                       <tr key={deal.id} className="hover:bg-gray-50">
                         <td className="px-6 py-4">
-                          <p className="font-medium text-gray-900">{deal.title}</p>
+                          <div className="flex items-center gap-2">
+                            <p className="font-medium text-gray-900">{deal.title}</p>
+                            <CompanyBadge companyId={deal.myCompanyId} size="xs" />
+                          </div>
                           <p className="text-sm text-gray-500">{clients.find(c => c.id === deal.clientId)?.name || 'Cliente'}</p>
                         </td>
                         <td className="px-6 py-4">

@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { MainLayout, PageHeader } from '@/components/layout';
-import { Button, Card, CardContent, Loading, Modal, Input, Textarea, Select, ConfirmDialog, StatCard, Badge, SearchInput } from '@/components/ui';
+import { Button, Card, CardContent, Loading, Modal, Input, Textarea, Select, ConfirmDialog, StatCard, Badge, SearchInput, CompanyBadge } from '@/components/ui';
 import { useOpportunitiesStore, useClientsStore, useCompanyStore } from '@/lib/store';
 import { Opportunity, OpportunityStage, PaymentStructure } from '@/lib/types';
 import { opportunityStageColors, priorityColors, formatCurrency, cn } from '@/lib/utils';
@@ -83,6 +83,7 @@ export default function DealsPage() {
     createOpportunity, updateOpportunity, deleteOpportunity, changeStage,
   } = useOpportunitiesStore();
   const { clients, fetchClients } = useClientsStore();
+  // selectedCompanyId used as default for new items
   const { selectedCompanyId } = useCompanyStore();
 
   const [viewMode, setViewMode] = useState<ViewMode>('kanban');
@@ -626,8 +627,11 @@ export default function DealsPage() {
                         className="bg-white rounded-lg shadow-sm p-4 cursor-move hover:shadow-md transition-shadow"
                       >
                         <div className="flex items-start justify-between mb-2">
-                          <h4 className="font-medium text-gray-900 text-sm">{opp.title}</h4>
-                          <div className="flex gap-1">
+                          <div className="flex items-center gap-1 min-w-0 flex-1">
+                            <h4 className="font-medium text-gray-900 text-sm truncate">{opp.title}</h4>
+                            <CompanyBadge companyId={opp.myCompanyId} size="xs" />
+                          </div>
+                          <div className="flex gap-1 ml-1">
                             <button
                               onClick={() => handleOpenModal(opp)}
                               className="p-1 hover:bg-gray-100 rounded"
@@ -740,7 +744,10 @@ export default function DealsPage() {
                 {filteredOpps.map((opp) => (
                   <tr key={opp.id} className="hover:bg-gray-50 transition-colors">
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="font-medium text-gray-900">{opp.title}</div>
+                      <div className="flex items-center gap-2">
+                        <div className="font-medium text-gray-900">{opp.title}</div>
+                        <CompanyBadge companyId={opp.myCompanyId} size="xs" />
+                      </div>
                       {opp.description && (
                         <div className="text-sm text-gray-500 truncate max-w-xs">{opp.description}</div>
                       )}
@@ -821,7 +828,10 @@ export default function DealsPage() {
                         {index + 1}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <div className="font-medium text-gray-900">{opp.title}</div>
+                        <div className="flex items-center gap-2">
+                          <div className="font-medium text-gray-900">{opp.title}</div>
+                          <CompanyBadge companyId={opp.myCompanyId} size="xs" />
+                        </div>
                         <div className="text-sm text-gray-500">
                           {getClientName(opp.clientId)} • {opportunityStageColors[opp.stage]?.label}
                         </div>

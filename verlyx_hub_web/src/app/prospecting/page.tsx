@@ -173,8 +173,8 @@ export default function ProspectingPage() {
   );
 
   useEffect(() => {
-    if (selectedCompanyId) fetchLeads();
-  }, [selectedCompanyId, fetchLeads]);
+    fetchLeads();
+  }, [fetchLeads]);
 
   // Try to get user location on mount
   useEffect(() => {

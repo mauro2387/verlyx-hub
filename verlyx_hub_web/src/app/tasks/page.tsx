@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { MainLayout, PageHeader } from '@/components/layout';
-import { Button, Card, SearchInput, Select, Loading, EmptyState, Modal, Input, Textarea, ConfirmDialog } from '@/components/ui';
+import { Button, Card, SearchInput, Select, Loading, EmptyState, Modal, Input, Textarea, ConfirmDialog, CompanyBadge } from '@/components/ui';
 import { useTasksStore, useProjectsStore, useCompanyStore } from '@/lib/store';
 import { Task, TaskStatus } from '@/lib/types';
 import { taskStatusColors, priorityColors, cn, formatDate } from '@/lib/utils';
@@ -341,8 +341,11 @@ export default function TasksPage() {
                       className="bg-white rounded-lg shadow-sm p-4 cursor-move hover:shadow-md transition-shadow"
                     >
                       <div className="flex items-start justify-between mb-2">
-                        <h4 className="font-medium text-gray-900 text-sm flex-1">{task.title}</h4>
-                        <div className="flex gap-1">
+                        <div className="flex items-center gap-1 flex-1 min-w-0">
+                          <h4 className="font-medium text-gray-900 text-sm truncate">{task.title}</h4>
+                          <CompanyBadge companyId={task.myCompanyId} size="xs" />
+                        </div>
+                        <div className="flex gap-1 ml-1">
                           {task.status === 'todo' && (
                             <button
                               onClick={() => handleQuickStart(task)}
@@ -458,6 +461,7 @@ export default function TasksPage() {
                         {taskStatusColors[task.status]?.label}
                       </span>
                       <h3 className="font-medium text-gray-900">{task.title}</h3>
+                      <CompanyBadge companyId={task.myCompanyId} size="xs" />
                     </div>
                     <p className="text-sm text-gray-500 mt-1 truncate">{task.description}</p>
                   </div>

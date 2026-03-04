@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { MainLayout, PageHeader } from '@/components/layout';
-import { Button, Card, SearchInput, Select, Badge, ProgressBar, EmptyState, Loading, ConfirmDialog } from '@/components/ui';
+import { Button, Card, SearchInput, Select, Badge, ProgressBar, EmptyState, Loading, ConfirmDialog, CompanyBadge } from '@/components/ui';
 import { useProjectsStore, useClientsStore } from '@/lib/store';
 import { projectStatusColors, priorityColors, formatCurrency, formatDate } from '@/lib/utils';
 import { Project } from '@/lib/types';
@@ -139,9 +139,12 @@ export default function ProjectsPage() {
               <div className="p-6 flex-1">
                 <div className="flex items-start justify-between mb-3">
                   <Link href={`/projects/${project.id}`} className="flex-1 min-w-0">
-                    <h3 className="font-semibold text-gray-900 hover:text-indigo-600 truncate">
-                      {project.name}
-                    </h3>
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-semibold text-gray-900 hover:text-indigo-600 truncate">
+                        {project.name}
+                      </h3>
+                      <CompanyBadge companyId={project.myCompanyId} size="xs" />
+                    </div>
                   </Link>
                   <span className={`ml-2 px-2 py-0.5 text-xs font-medium rounded-full ${projectStatusColors[project.status]?.bg} ${projectStatusColors[project.status]?.text}`}>
                     {projectStatusColors[project.status]?.label}
