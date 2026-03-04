@@ -125,12 +125,38 @@ ALTER TABLE public.transactions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.workspaces ENABLE ROW LEVEL SECURITY;
 
 -- ============================================================
--- 4. RLS POLICIES — Company-scoped tables
+-- 4. RLS POLICIES
 -- ============================================================
--- Helper: user belongs to a company via company_users OR owns via my_companies
--- Pattern: my_company_id IN (companies the user can access)
 
--- For tables with my_company_id
+-- 4a. SECURITY DEFINER helper — bypasses RLS to avoid recursion
+-- All policies call this instead of querying my_companies directly
+CREATE OR REPLACE FUNCTION public.get_user_company_ids()
+RETURNS SETOF uuid
+LANGUAGE sql
+SECURITY DEFINER
+STABLE
+SET search_path = public
+AS $$
+  SELECT id FROM public.my_companies WHERE user_id = auth.uid()
+  UNION
+  SELECT company_id FROM public.company_users WHERE user_id = auth.uid() AND is_active = true;
+$$;
+
+-- 4b. Drop ALL pre-existing policies on every table (from earlier migrations)
+DO $$
+DECLARE
+  pol RECORD;
+BEGIN
+  FOR pol IN
+    SELECT schemaname, tablename, policyname
+    FROM pg_policies
+    WHERE schemaname = 'public'
+  LOOP
+    EXECUTE format('DROP POLICY IF EXISTS %I ON %I.%I', pol.policyname, pol.schemaname, pol.tablename);
+  END LOOP;
+END $$;
+
+-- 4c. Company-scoped tables (my_company_id)
 DO $$ 
 DECLARE
   tbl TEXT;
@@ -146,24 +172,16 @@ BEGIN
     'lead_scoring_rules'
   ])
   LOOP
-    -- Drop existing policy if any (to make idempotent)
-    EXECUTE format('DROP POLICY IF EXISTS rls_company_access ON public.%I', tbl);
-    
-    -- Create policy: user can access rows where my_company_id matches their companies
     EXECUTE format(
       'CREATE POLICY rls_company_access ON public.%I
        FOR ALL USING (
-         my_company_id IN (
-           SELECT id FROM public.my_companies WHERE user_id = auth.uid()
-           UNION
-           SELECT company_id FROM public.company_users WHERE user_id = auth.uid() AND is_active = true
-         )
+         my_company_id IN (SELECT public.get_user_company_ids())
        )', tbl
     );
   END LOOP;
 END $$;
 
--- For tables with user_id (direct user ownership)
+-- 4d. User-scoped tables (user_id)
 DO $$
 DECLARE
   tbl TEXT;
@@ -173,7 +191,6 @@ BEGIN
     'notifications', 'pdf_templates', 'subscriptions'
   ])
   LOOP
-    EXECUTE format('DROP POLICY IF EXISTS rls_user_access ON public.%I', tbl);
     EXECUTE format(
       'CREATE POLICY rls_user_access ON public.%I
        FOR ALL USING (user_id = auth.uid())', tbl
@@ -181,173 +198,124 @@ BEGIN
   END LOOP;
 END $$;
 
--- my_companies: user can see their own companies
-DROP POLICY IF EXISTS rls_own_companies ON public.my_companies;
+-- my_companies: direct ownership (no subquery on self — avoids recursion)
 CREATE POLICY rls_own_companies ON public.my_companies
   FOR ALL USING (
     user_id = auth.uid()
     OR id IN (SELECT company_id FROM public.company_users WHERE user_id = auth.uid() AND is_active = true)
   );
 
--- profiles: users can see/edit own profile
-DROP POLICY IF EXISTS rls_own_profile ON public.profiles;
+-- profiles
 CREATE POLICY rls_own_profile ON public.profiles
   FOR ALL USING (id = auth.uid());
 
--- deals: user_id based
-DROP POLICY IF EXISTS rls_deals_access ON public.deals;
+-- deals: user + company
 CREATE POLICY rls_deals_access ON public.deals
   FOR ALL USING (
     user_id = auth.uid()
-    OR my_company_id IN (
-      SELECT id FROM public.my_companies WHERE user_id = auth.uid()
-      UNION
-      SELECT company_id FROM public.company_users WHERE user_id = auth.uid() AND is_active = true
-    )
+    OR my_company_id IN (SELECT public.get_user_company_ids())
   );
 
--- projects: user_id based + company
-DROP POLICY IF EXISTS rls_projects_access ON public.projects;
+-- projects: user + company
 CREATE POLICY rls_projects_access ON public.projects
   FOR ALL USING (
     user_id = auth.uid()
-    OR my_company_id IN (
-      SELECT id FROM public.my_companies WHERE user_id = auth.uid()
-      UNION
-      SELECT company_id FROM public.company_users WHERE user_id = auth.uid() AND is_active = true
-    )
+    OR my_company_id IN (SELECT public.get_user_company_ids())
   );
 
--- tasks: user_id based + company
-DROP POLICY IF EXISTS rls_tasks_access ON public.tasks;
+-- tasks: user + company
 CREATE POLICY rls_tasks_access ON public.tasks
   FOR ALL USING (
     user_id = auth.uid()
-    OR my_company_id IN (
-      SELECT id FROM public.my_companies WHERE user_id = auth.uid()
-      UNION
-      SELECT company_id FROM public.company_users WHERE user_id = auth.uid() AND is_active = true
-    )
+    OR my_company_id IN (SELECT public.get_user_company_ids())
   );
 
--- company_users: user can see their own memberships
-DROP POLICY IF EXISTS rls_company_users ON public.company_users;
+-- company_users
 CREATE POLICY rls_company_users ON public.company_users
   FOR ALL USING (user_id = auth.uid());
 
--- contact_segment_members: via segment → company
-DROP POLICY IF EXISTS rls_segment_members ON public.contact_segment_members;
+-- contact_segment_members: via segment
 CREATE POLICY rls_segment_members ON public.contact_segment_members
   FOR ALL USING (
     segment_id IN (
       SELECT cs.id FROM public.contact_segments cs
-      WHERE cs.my_company_id IN (
-        SELECT id FROM public.my_companies WHERE user_id = auth.uid()
-        UNION
-        SELECT company_id FROM public.company_users WHERE user_id = auth.uid() AND is_active = true
-      )
+      WHERE cs.my_company_id IN (SELECT public.get_user_company_ids())
     )
   );
 
--- notification_preferences: own only
-DROP POLICY IF EXISTS rls_notification_prefs ON public.notification_preferences;
+-- notification_preferences
 CREATE POLICY rls_notification_prefs ON public.notification_preferences
   FOR ALL USING (user_id = auth.uid());
 
--- audit_logs: company scoped
-DROP POLICY IF EXISTS rls_audit_logs ON public.audit_logs;
+-- audit_logs
 CREATE POLICY rls_audit_logs ON public.audit_logs
   FOR ALL USING (
     user_id = auth.uid()
-    OR company_id IN (
-      SELECT id FROM public.my_companies WHERE user_id = auth.uid()
-      UNION
-      SELECT company_id FROM public.company_users WHERE user_id = auth.uid() AND is_active = true
-    )
+    OR company_id IN (SELECT public.get_user_company_ids())
   );
 
--- pages/blocks/versions/comments/permissions: via workspace → company
-DROP POLICY IF EXISTS rls_pages_access ON public.pages;
+-- pages: creator + public + workspace company
 CREATE POLICY rls_pages_access ON public.pages
   FOR ALL USING (
     created_by = auth.uid()
     OR is_public = true
     OR workspace_id IN (
       SELECT w.id FROM public.workspaces w
-      WHERE w.my_company_id IN (
-        SELECT id FROM public.my_companies WHERE user_id = auth.uid()
-        UNION
-        SELECT company_id FROM public.company_users WHERE user_id = auth.uid() AND is_active = true
-      )
+      WHERE w.my_company_id IN (SELECT public.get_user_company_ids())
     )
   );
 
-DROP POLICY IF EXISTS rls_blocks_access ON public.blocks;
+-- blocks: via page
 CREATE POLICY rls_blocks_access ON public.blocks
   FOR ALL USING (
     page_id IN (SELECT id FROM public.pages WHERE created_by = auth.uid() OR is_public = true)
   );
 
 -- AI tables (global read for models/rules, scoped for user data)
-DROP POLICY IF EXISTS rls_ai_models ON public.ai_models;
 CREATE POLICY rls_ai_models ON public.ai_models
   FOR SELECT USING (true);
 
-DROP POLICY IF EXISTS rls_ai_routing ON public.ai_routing_rules;
 CREATE POLICY rls_ai_routing ON public.ai_routing_rules
   FOR SELECT USING (true);
 
-DROP POLICY IF EXISTS rls_ai_convos ON public.ai_conversations;
 CREATE POLICY rls_ai_convos ON public.ai_conversations
   FOR ALL USING (user_id = auth.uid());
 
-DROP POLICY IF EXISTS rls_ai_messages ON public.ai_messages;
 CREATE POLICY rls_ai_messages ON public.ai_messages
   FOR ALL USING (
     conversation_id IN (SELECT id FROM public.ai_conversations WHERE user_id = auth.uid())
   );
 
--- payment_links, payments, refunds: public-ish (for webhook access)
-DROP POLICY IF EXISTS rls_payment_links ON public.payment_links;
+-- payment_links, payments, refunds: open (webhook access)
 CREATE POLICY rls_payment_links ON public.payment_links
   FOR ALL USING (true);
 
-DROP POLICY IF EXISTS rls_payments ON public.payments;
 CREATE POLICY rls_payments ON public.payments
   FOR ALL USING (true);
 
-DROP POLICY IF EXISTS rls_refunds ON public.refunds;
 CREATE POLICY rls_refunds ON public.refunds
   FOR ALL USING (true);
 
 -- lead_score_history: via contact_lead_scores → company
-DROP POLICY IF EXISTS rls_lead_score_history ON public.lead_score_history;
 CREATE POLICY rls_lead_score_history ON public.lead_score_history
   FOR ALL USING (
     contact_lead_score_id IN (
       SELECT cls.id FROM public.contact_lead_scores cls
-      WHERE cls.my_company_id IN (
-        SELECT id FROM public.my_companies WHERE user_id = auth.uid()
-        UNION
-        SELECT company_id FROM public.company_users WHERE user_id = auth.uid() AND is_active = true
-      )
+      WHERE cls.my_company_id IN (SELECT public.get_user_company_ids())
     )
   );
 
 -- page_versions, page_comments, page_permissions: via page
-DROP POLICY IF EXISTS rls_page_versions ON public.page_versions;
 CREATE POLICY rls_page_versions ON public.page_versions
   FOR ALL USING (
     page_id IN (SELECT id FROM public.pages WHERE created_by = auth.uid() OR is_public = true)
   );
 
-DROP POLICY IF EXISTS rls_page_comments ON public.page_comments;
 CREATE POLICY rls_page_comments ON public.page_comments
   FOR ALL USING (
     page_id IN (SELECT id FROM public.pages WHERE created_by = auth.uid() OR is_public = true)
   );
 
-DROP POLICY IF EXISTS rls_page_permissions ON public.page_permissions;
 CREATE POLICY rls_page_permissions ON public.page_permissions
   FOR ALL USING (user_id = auth.uid());
 
@@ -355,6 +323,7 @@ CREATE POLICY rls_page_permissions ON public.page_permissions
 -- DONE
 -- ============================================================
 -- 1. Removed 10 duplicate FK constraints
--- 2. Added 6 missing columns to tasks (parent_task_id, checklist, deal_id, client_id, blocked_reason, progress_percentage)
+-- 2. Added 6 missing columns to tasks
 -- 3. Enabled RLS on ALL 45+ tables
--- 4. Created company-scoped + user-scoped policies for every table
+-- 4. Created SECURITY DEFINER helper to avoid recursion
+-- 5. Dropped ALL pre-existing policies, created clean ones for every table
