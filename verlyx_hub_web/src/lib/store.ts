@@ -3358,6 +3358,10 @@ export const useOpportunitiesStore = create<OpportunitiesState>((set, get) => ({
         ? 'Plan de cobro recurrente configurado.'
         : 'Ingreso registrado.';
       toast.success('Oportunidad ganada', `Cliente actualizado, proyecto creado. ${paymentMsg}`);
+
+      // Refresh clients store so the new/updated client appears immediately
+      try { useClientsStore.getState().fetchClients(); } catch (_) {}
+
       return {
         projectId: data.project_id,
         clientId: data.client_id,
