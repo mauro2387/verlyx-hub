@@ -198,6 +198,7 @@ CREATE TABLE IF NOT EXISTS public.active_timers (
 -- 6. CONTACT CRM SUMMARY VIEW
 -- ============================================================
 -- Aggregates contacts + lead scores + activities + deals
+DROP VIEW IF EXISTS public.contact_crm_summary;
 CREATE OR REPLACE VIEW public.contact_crm_summary AS
 SELECT
   c.id,
@@ -247,6 +248,7 @@ LEFT JOIN LATERAL (
 -- ============================================================
 -- 7. PENDING FOLLOW-UPS VIEW
 -- ============================================================
+DROP VIEW IF EXISTS public.pending_follow_ups;
 CREATE OR REPLACE VIEW public.pending_follow_ups AS
 SELECT
   ca.id,
