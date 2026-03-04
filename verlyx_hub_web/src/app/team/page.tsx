@@ -4,7 +4,8 @@ import { useState, useEffect } from 'react';
 import { MainLayout, PageHeader } from '@/components/layout';
 import { Card, Button, Input, Modal, Badge } from '@/components/ui';
 import { enterpriseHelpers } from '@/lib/enterprise-helpers';
-import { useAuthStore } from '@/lib/store';
+import { useAuthStore, useCompanyStore } from '@/lib/store';
+import { CompanyBadge, CompanySelector } from '@/components/ui';
 import { 
   Users, Plus, Search, Filter, UserPlus, Briefcase, 
   Calendar, DollarSign, Clock, Mail, Phone, MoreVertical,
@@ -58,6 +59,8 @@ const statusLabels: Record<string, { label: string; color: string }> = {
 
 export default function TeamPage() {
   const { user } = useAuthStore();
+  const { selectedCompanyId } = useCompanyStore();
+  const [formCompanyId, setFormCompanyId] = useState(selectedCompanyId || '');
   const [members, setMembers] = useState<TeamMember[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -108,6 +111,7 @@ export default function TeamPage() {
     
     const memberData = {
       userId: user.id,
+      myCompanyId: formCompanyId || selectedCompanyId || undefined,
       firstName: form.firstName,
       lastName: form.lastName,
       email: form.email,
@@ -346,6 +350,7 @@ export default function TeamPage() {
                     </div>
                     <div>
                       <h3 className="font-semibold">{member.first_name} {member.last_name}</h3>
+                      <CompanyBadge companyId={(member as any).my_company_id} />
                       <p className="text-sm text-gray-500">{member.job_title || 'Sin puesto'}</p>
                     </div>
                   </div>
@@ -496,6 +501,11 @@ export default function TeamPage() {
             {/* Tab: Información */}
             {activeTab === 0 && (
               <div className="space-y-4">
+                <CompanySelector
+                  value={formCompanyId || selectedCompanyId || ''}
+                  onChange={(id) => setFormCompanyId(id)}
+                  label="Empresa"
+                />
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium mb-1">Nombre *</label>

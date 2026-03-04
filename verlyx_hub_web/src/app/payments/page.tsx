@@ -31,6 +31,8 @@ import {
   Globe,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import { useCompanyStore } from '@/lib/store';
+import { CompanyBadge, CompanySelector } from '@/components/ui';
 
 // Types
 interface PaymentLink {
@@ -84,6 +86,10 @@ function generateQRUrl(data: string, size: number = 300): string {
 }
 
 export default function PaymentsPage() {
+  // Store
+  const { selectedCompanyId } = useCompanyStore();
+  const [formCompanyId, setFormCompanyId] = useState(selectedCompanyId || '');
+
   // State
   const [activeTab, setActiveTab] = useState<'links' | 'payments' | 'analytics'>('links');
   const [paymentLinks, setPaymentLinks] = useState<PaymentLink[]>([]);
@@ -153,6 +159,7 @@ export default function PaymentsPage() {
           client_name: formData.client_name || undefined,
           client_email: formData.client_email || undefined,
           expires_in_days: parseInt(formData.expires_in_days),
+          myCompanyId: formCompanyId || selectedCompanyId || undefined,
         }),
       });
 
@@ -467,7 +474,10 @@ export default function PaymentsPage() {
                       <tr key={link.id} className="hover:bg-gray-800/30 transition-colors">
                         <td className="px-4 py-3">
                           <div>
-                            <p className="text-white font-medium">{link.description}</p>
+                            <div className="flex items-center gap-2">
+                              <p className="text-white font-medium">{link.description}</p>
+                              <CompanyBadge companyId={(link as any).my_company_id || (link as any).myCompanyId} />
+                            </div>
                             <p className="text-xs text-gray-500">{link.order_id}</p>
                           </div>
                         </td>
@@ -609,6 +619,12 @@ export default function PaymentsPage() {
           title="Crear Link de Pago"
         >
           <div className="space-y-4">
+              <CompanySelector
+                value={formCompanyId || selectedCompanyId || ''}
+                onChange={(id) => setFormCompanyId(id)}
+                label="Empresa"
+              />
+
             {/* Amount & Currency */}
             <div className="grid grid-cols-2 gap-4">
               <div>

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { MainLayout, PageHeader } from '@/components/layout';
-import { Button, Card, CardContent, Input, Select, Textarea, Modal, Badge, EmptyState, SearchInput, ConfirmDialog } from '@/components/ui';
+import { Button, Card, CardContent, Input, Select, Textarea, Modal, Badge, EmptyState, SearchInput, ConfirmDialog, CompanyBadge, CompanySelector } from '@/components/ui';
 import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/lib/store';
 import { useCompanyStore } from '@/lib/store';
@@ -78,6 +78,7 @@ const sizeOptions = [
 export default function OrganizationsPage() {
   const { user } = useAuthStore();
   const { selectedCompanyId } = useCompanyStore();
+  const [formCompanyId, setFormCompanyId] = useState(selectedCompanyId || '');
   
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
@@ -271,11 +272,12 @@ export default function OrganizationsPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedCompanyId) return;
+    const companyId = formCompanyId || selectedCompanyId;
+    if (!companyId) return;
 
     try {
       const orgData = {
-        my_company_id: selectedCompanyId,
+        my_company_id: companyId,
         name: formData.name,
         code: formData.code || null,
         type: formData.type,
@@ -390,6 +392,7 @@ export default function OrganizationsPage() {
             <div className="flex-1">
               <div className="flex items-center gap-3 mb-1">
                 <h3 className="font-semibold text-gray-900 text-lg">{org.name}</h3>
+                <CompanyBadge companyId={org.my_company_id} />
                 {org.code && (
                   <span className="px-2 py-0.5 text-xs font-mono bg-gray-100 text-gray-600 rounded">
                     {org.code}
@@ -627,6 +630,7 @@ export default function OrganizationsPage() {
                       <div className="flex-1">
                         <div className="flex items-center gap-3 mb-1">
                           <h3 className="font-semibold text-gray-900">{org.name}</h3>
+                          <CompanyBadge companyId={org.my_company_id} />
                           {org.code && (
                             <span className="px-2 py-0.5 text-xs font-mono bg-gray-100 text-gray-600 rounded">
                               {org.code}
@@ -866,6 +870,11 @@ export default function OrganizationsPage() {
         size="lg"
       >
         <form onSubmit={handleSubmit} className="space-y-6">
+          <CompanySelector
+            value={formCompanyId || selectedCompanyId || ''}
+            onChange={(id) => setFormCompanyId(id)}
+            label="Empresa propietaria"
+          />
           <div className="grid grid-cols-2 gap-4">
             <Input 
               label="Nombre *" 

@@ -4,8 +4,8 @@ import { useEffect, useState, useMemo } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { MainLayout, PageHeader } from '@/components/layout';
-import { Button, Card, CardContent, SearchInput, Select, EmptyState, Loading, Modal, Input, Textarea, ConfirmDialog, Avatar, Badge, StatCard } from '@/components/ui';
-import { useClientsStore, useProjectsStore, useOpportunitiesStore } from '@/lib/store';
+import { Button, Card, CardContent, SearchInput, Select, EmptyState, Loading, Modal, Input, Textarea, ConfirmDialog, Avatar, Badge, StatCard, CompanyBadge, CompanySelector } from '@/components/ui';
+import { useClientsStore, useProjectsStore, useOpportunitiesStore, useCompanyStore } from '@/lib/store';
 import { Client } from '@/lib/types';
 import { clientTypeLabels, cn, generateRandomColor, formatDate, formatCurrency } from '@/lib/utils';
 
@@ -27,6 +27,7 @@ export default function ClientsPage() {
   const { clients, isLoading, fetchClients, addClient, updateClient, deleteClient, filter, setFilter, getFilteredClients } = useClientsStore();
   const { projects, fetchProjects } = useProjectsStore();
   const { opportunities: deals, fetchOpportunities: fetchDeals } = useOpportunitiesStore();
+  const { selectedCompanyId } = useCompanyStore();
   const router = useRouter();
   
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
@@ -50,6 +51,7 @@ export default function ClientsPage() {
     address: '',
     city: '',
     country: '',
+    myCompanyId: '',
   });
 
   useEffect(() => {
@@ -109,6 +111,7 @@ export default function ClientsPage() {
         address: '',
         city: '',
         country: '',
+        myCompanyId: (client as any).myCompanyId || (client as any).my_company_id || selectedCompanyId || '',
       });
     } else {
       setEditingClient(null);
@@ -126,6 +129,7 @@ export default function ClientsPage() {
         address: '',
         city: '',
         country: '',
+        myCompanyId: selectedCompanyId || '',
       });
     }
     setIsModalOpen(true);
@@ -151,6 +155,7 @@ export default function ClientsPage() {
       notes: formData.notes,
       tags: formData.tags,
       isActive: formData.status === 'active',
+      myCompanyId: formData.myCompanyId || selectedCompanyId,
     };
 
     if (editingClient) {
@@ -469,7 +474,10 @@ export default function ClientsPage() {
                             size="lg"
                           />
                           <div className="flex-1 min-w-0">
-                            <h3 className="font-semibold text-gray-900 truncate">{client.name}</h3>
+                            <div className="flex items-center gap-2">
+                              <h3 className="font-semibold text-gray-900 truncate">{client.name}</h3>
+                              <CompanyBadge companyId={(client as any).myCompanyId || (client as any).my_company_id} />
+                            </div>
                             {client.company && (
                               <p className="text-sm text-gray-500 truncate">{client.company}</p>
                             )}
@@ -606,7 +614,10 @@ export default function ClientsPage() {
                             <div className="flex items-center gap-3">
                               <Avatar name={client.name} size="sm" />
                               <div>
-                                <div className="font-medium text-gray-900">{client.name}</div>
+                                <div className="flex items-center gap-2">
+                                  <div className="font-medium text-gray-900">{client.name}</div>
+                                  <CompanyBadge companyId={(client as any).myCompanyId || (client as any).my_company_id} />
+                                </div>
                                 {client.company && (
                                   <div className="text-sm text-gray-500">{client.company}</div>
                                 )}
@@ -791,6 +802,14 @@ export default function ClientsPage() {
         size="lg"
       >
         <form onSubmit={handleSubmit} className="space-y-6">
+          {/* Company Selector */}
+          <CompanySelector
+            value={formData.myCompanyId || selectedCompanyId || ''}
+            onChange={(id) => setFormData({ ...formData, myCompanyId: id })}
+            label="Empresa propietaria"
+            required
+          />
+
           {/* Personal Information */}
           <div>
             <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">

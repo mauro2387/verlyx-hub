@@ -2,8 +2,8 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { MainLayout, PageHeader } from '@/components/layout';
-import { Button, Card, CardContent, Modal, Badge, Input, Select, Textarea, StatCard, SearchInput, Loading } from '@/components/ui';
-import { useCalendarStore, useProjectsStore, useClientsStore, useOpportunitiesStore, useTasksStore, CalendarEvent, CalendarEventType, CalendarEventStatus, CalendarEventPriority } from '@/lib/store';
+import { Button, Card, CardContent, Modal, Badge, Input, Select, Textarea, StatCard, SearchInput, Loading, CompanyBadge, CompanySelector } from '@/components/ui';
+import { useCalendarStore, useProjectsStore, useClientsStore, useOpportunitiesStore, useTasksStore, useCompanyStore, CalendarEvent, CalendarEventType, CalendarEventStatus, CalendarEventPriority } from '@/lib/store';
 import { formatDateTime, cn } from '@/lib/utils';
 
 type ViewMode = 'month' | 'week' | 'day' | 'agenda' | 'list';
@@ -70,6 +70,8 @@ export default function CalendarPage() {
   const { clients, fetchClients } = useClientsStore();
   const { opportunities: deals, fetchOpportunities: fetchDeals } = useOpportunitiesStore();
   const { tasks, fetchTasks } = useTasksStore();
+  const { selectedCompanyId } = useCompanyStore();
+  const [formCompanyId, setFormCompanyId] = useState(selectedCompanyId || '');
 
   const [viewMode, setViewMode] = useState<ViewMode>('month');
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
@@ -276,6 +278,7 @@ export default function CalendarPage() {
       status: formData.status,
       relatedType: (formData.relatedType || undefined) as 'project' | 'client' | 'deal' | 'task' | '' | undefined,
       relatedId: formData.relatedId || undefined,
+      myCompanyId: formCompanyId || selectedCompanyId || undefined,
     };
 
     if (isEditMode && selectedEvent) {
@@ -696,6 +699,7 @@ export default function CalendarPage() {
                             <div className="flex items-center gap-2 mb-1">
                               <span className="text-lg">{typeConfig[event.type].icon}</span>
                               <h3 className="font-semibold text-gray-900">{event.title}</h3>
+                              <CompanyBadge companyId={(event as any).myCompanyId || (event as any).my_company_id} />
                             </div>
                             <p className="text-sm text-gray-600">{formatDateTime(event.startDate)}</p>
                             {event.location && <p className="text-sm text-gray-500 mt-1">📍 {event.location}</p>}
@@ -743,6 +747,7 @@ export default function CalendarPage() {
                               <div className="flex items-center gap-2">
                                 <span>{typeConfig[event.type].icon}</span>
                                 <span className="font-medium text-gray-900">{event.title}</span>
+                                <CompanyBadge companyId={(event as any).myCompanyId || (event as any).my_company_id} />
                               </div>
                             </td>
                             <td className="px-4 py-3">
@@ -950,6 +955,13 @@ export default function CalendarPage() {
         size="lg"
       >
         <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Company Selector */}
+          <CompanySelector
+            value={formCompanyId || selectedCompanyId || ''}
+            onChange={(id) => setFormCompanyId(id)}
+            label="Empresa"
+          />
+
           {/* Title */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Título *</label>

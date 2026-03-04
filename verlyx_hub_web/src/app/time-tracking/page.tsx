@@ -4,7 +4,8 @@ import { useEffect, useState, useCallback, useMemo } from 'react';
 import { MainLayout, PageHeader } from '@/components/layout';
 import { Card, CardContent, Badge, Button, Loading, Input, Select } from '@/components/ui';
 import { enterpriseHelpers } from '@/lib/enterprise-helpers';
-import { useAuthStore } from '@/lib/store';
+import { useAuthStore, useCompanyStore } from '@/lib/store';
+import { CompanyBadge, CompanySelector } from '@/components/ui';
 import { formatCurrency, formatDate, cn } from '@/lib/utils';
 
 interface TimeEntry {
@@ -51,6 +52,8 @@ function formatElapsedTime(startTime: string): string {
 
 export default function TimeTrackingPage() {
   const { user } = useAuthStore();
+  const { selectedCompanyId } = useCompanyStore();
+  const [formCompanyId, setFormCompanyId] = useState(selectedCompanyId || '');
   
   const [entries, setEntries] = useState<TimeEntry[]>([]);
   const [activeTimer, setActiveTimer] = useState<ActiveTimer | null>(null);
@@ -141,6 +144,7 @@ export default function TimeTrackingPage() {
     
     const { error } = await enterpriseHelpers.timeTracking.startTimer({
       userId: user.id,
+      myCompanyId: formCompanyId || selectedCompanyId || undefined,
       projectName: newTimerProjectName || undefined,
       taskName: newTimerTaskName || undefined,
       description: newTimerDescription || undefined,
@@ -181,6 +185,7 @@ export default function TimeTrackingPage() {
     
     const { error } = await enterpriseHelpers.timeTracking.createManualEntry({
       userId: user.id,
+      myCompanyId: formCompanyId || selectedCompanyId || undefined,
       projectName: manualProjectName || undefined,
       taskName: manualTaskName || undefined,
       description: manualDescription || undefined,
@@ -304,6 +309,11 @@ export default function TimeTrackingPage() {
             </div>
           ) : (
             <div className="space-y-4">
+              <CompanySelector
+                value={formCompanyId || selectedCompanyId || ''}
+                onChange={(id) => setFormCompanyId(id)}
+                label="Empresa"
+              />
               <div className="flex flex-col md:flex-row gap-4">
                 <div className="flex-1">
                   <Input
@@ -524,6 +534,7 @@ export default function TimeTrackingPage() {
                                   <span className="font-medium text-gray-900 truncate">
                                     {entry.project_name || 'Sin proyecto'}
                                   </span>
+                                  <CompanyBadge companyId={(entry as any).my_company_id} />
                                   {entry.is_billable && (
                                     <Badge variant="success" className="text-xs">Facturable</Badge>
                                   )}

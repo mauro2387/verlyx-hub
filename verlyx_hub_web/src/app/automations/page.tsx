@@ -3,7 +3,8 @@
 import { useState, useEffect } from 'react';
 import { MainLayout, PageHeader } from '@/components/layout';
 import { Card, Button, Input, Badge, Modal } from '@/components/ui';
-import { useAuthStore } from '@/lib/store';
+import { CompanyBadge, CompanySelector } from '@/components/ui';
+import { useAuthStore, useCompanyStore } from '@/lib/store';
 import { enterpriseHelpers } from '@/lib/enterprise-helpers';
 
 interface Automation {
@@ -41,6 +42,8 @@ interface AutomationLog {
 
 export default function AutomationsPage() {
   const { user } = useAuthStore();
+  const { selectedCompanyId } = useCompanyStore();
+  const [formCompanyId, setFormCompanyId] = useState(selectedCompanyId || '');
   const [automations, setAutomations] = useState<Automation[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -76,6 +79,7 @@ export default function AutomationsPage() {
 
     const { error } = await enterpriseHelpers.automations.create({
       userId: user.id,
+      myCompanyId: formCompanyId || selectedCompanyId || undefined,
       name: formData.name,
       description: formData.description || undefined,
       triggerType: formData.triggerType,
@@ -254,6 +258,7 @@ export default function AutomationsPage() {
                     <div>
                       <div className="flex items-center gap-2 mb-1">
                         <h3 className="font-semibold text-gray-900">{automation.name}</h3>
+                        <CompanyBadge companyId={(automation as any).my_company_id} />
                         <Badge variant={automation.is_active ? 'success' : 'default'}>
                           {automation.is_active ? 'Activa' : 'Inactiva'}
                         </Badge>
@@ -334,6 +339,11 @@ export default function AutomationsPage() {
       {/* Create Modal */}
       <Modal isOpen={showModal} onClose={closeModal} title="Nueva Automatización">
           <form onSubmit={handleSubmit} className="space-y-4">
+              <CompanySelector
+                value={formCompanyId || selectedCompanyId || ''}
+                onChange={(id) => setFormCompanyId(id)}
+                label="Empresa"
+              />
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Nombre *</label>
               <Input

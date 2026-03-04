@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import { MainLayout, PageHeader } from '@/components/layout';
-import { Button, Card, CardContent, SearchInput, Select, EmptyState, Loading, Modal, Input, Textarea, ConfirmDialog } from '@/components/ui';
-import { useDocumentsStore } from '@/lib/store';
+import { Button, Card, CardContent, SearchInput, Select, EmptyState, Loading, Modal, Input, Textarea, ConfirmDialog, CompanyBadge, CompanySelector } from '@/components/ui';
+import { useDocumentsStore, useCompanyStore } from '@/lib/store';
 import { Document } from '@/lib/types';
 import { formatFileSize, formatDate, cn } from '@/lib/utils';
 
@@ -68,6 +68,8 @@ export default function DocumentsPage() {
     getFilteredDocuments,
     getFolders
   } = useDocumentsStore();
+  const { selectedCompanyId } = useCompanyStore();
+  const [formCompanyId, setFormCompanyId] = useState(selectedCompanyId || '');
   
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingDocument, setEditingDocument] = useState<Document | null>(null);
@@ -117,6 +119,7 @@ export default function DocumentsPage() {
       filePath: `/documents/${formData.name.toLowerCase().replace(/\s/g, '-')}`,
       mimeType: 'application/octet-stream',
       size: 0,
+      myCompanyId: formCompanyId || selectedCompanyId || undefined,
     };
 
     if (editingDocument) {
@@ -240,6 +243,7 @@ export default function DocumentsPage() {
                       {getFileIcon(doc.mimeType || '')}
                       <div className="flex-1 min-w-0">
                         <h3 className="font-medium text-gray-900 truncate">{doc.name}</h3>
+                        <CompanyBadge companyId={(doc as any).myCompanyId || (doc as any).my_company_id} />
                         <p className="text-sm text-gray-500">{doc.folder}</p>
                         <div className="flex items-center gap-2 mt-2 text-xs text-gray-400">
                           <span>{formatFileSize(doc.size || 0)}</span>
@@ -283,6 +287,11 @@ export default function DocumentsPage() {
         title={editingDocument ? 'Editar Documento' : 'Nuevo Documento'}
       >
         <form onSubmit={handleSubmit} className="space-y-4">
+          <CompanySelector
+            value={formCompanyId || selectedCompanyId || ''}
+            onChange={(id) => setFormCompanyId(id)}
+            label="Empresa"
+          />
           <Input
             label="Nombre *"
             placeholder="Nombre del documento"

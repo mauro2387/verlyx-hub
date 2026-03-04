@@ -256,7 +256,7 @@ export const useClientsStore = create<ClientsState>((set, get) => ({
     }
   },
   addClient: async (data) => {
-    const companyId = useCompanyStore.getState().selectedCompanyId;
+    const companyId = data.myCompanyId || useCompanyStore.getState().selectedCompanyId;
     const nameParts = data.name?.split(' ') || [];
     const { data: { user } } = await supabase.auth.getUser();
     const { data: newContact } = await supabase
@@ -865,6 +865,7 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
     }
   },
   addEvent: async (eventData) => {
+    const companyId = (eventData as any).myCompanyId || useCompanyStore.getState().selectedCompanyId;
     const { data: newEvent, error } = await db.calendarEvents.create({
       title: eventData.title,
       description: eventData.description || null,
@@ -878,6 +879,7 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
       priority: eventData.priority,
       related_type: eventData.relatedType || null,
       related_id: eventData.relatedId || null,
+      my_company_id: companyId,
     });
     
     if (newEvent && !error) {
@@ -1014,6 +1016,7 @@ export const useDocumentsStore = create<DocumentsState>((set, get) => ({
     set({ documents: mappedDocs, isLoading: false });
   },
   addDocument: async (data) => {
+    const companyId = (data as any).myCompanyId || useCompanyStore.getState().selectedCompanyId;
     // Map camelCase to snake_case for Supabase
     const docData = {
       name: data.name,
@@ -1026,6 +1029,7 @@ export const useDocumentsStore = create<DocumentsState>((set, get) => ({
       is_public: data.isPublic || false,
       project_id: data.projectId || null,
       contact_id: data.contactId || null,
+      my_company_id: companyId,
     };
     const { data: newDoc, error } = await db.documents.create(docData);
     if (error) {
@@ -1585,7 +1589,7 @@ export const useAccountsStore = create<AccountsState>((set, get) => ({
     }
   },
   addAccount: async (data) => {
-    const companyId = useCompanyStore.getState().selectedCompanyId;
+    const companyId = data.myCompanyId || useCompanyStore.getState().selectedCompanyId;
     if (!companyId) return;
     
     const { data: newAcc, error } = await financial.accounts.create({

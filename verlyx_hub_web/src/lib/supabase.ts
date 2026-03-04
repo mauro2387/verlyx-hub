@@ -219,6 +219,7 @@ export interface CalendarEvent {
   priority: string;
   related_type: string | null;
   related_id: string | null;
+  my_company_id?: string | null;
   created_at: string;
   updated_at: string;
 }

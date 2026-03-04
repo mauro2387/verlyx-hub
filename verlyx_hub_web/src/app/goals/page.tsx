@@ -3,7 +3,8 @@
 import { useState, useEffect } from 'react';
 import { MainLayout, PageHeader } from '@/components/layout';
 import { Card, Button, Input, Badge, Modal } from '@/components/ui';
-import { useAuthStore } from '@/lib/store';
+import { useAuthStore, useCompanyStore } from '@/lib/store';
+import { CompanyBadge, CompanySelector } from '@/components/ui';
 import { enterpriseHelpers } from '@/lib/enterprise-helpers';
 
 interface Goal {
@@ -23,6 +24,8 @@ interface Goal {
 
 export default function GoalsPage() {
   const { user } = useAuthStore();
+  const { selectedCompanyId } = useCompanyStore();
+  const [formCompanyId, setFormCompanyId] = useState(selectedCompanyId || '');
   const [goals, setGoals] = useState<Goal[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState<string>('all');
@@ -72,6 +75,7 @@ export default function GoalsPage() {
     } else {
       const { error } = await enterpriseHelpers.goals.create({
         userId: user.id,
+        myCompanyId: formCompanyId || selectedCompanyId || undefined,
         name: formData.name,
         description: formData.description || undefined,
         goalType: formData.goalType,
@@ -292,6 +296,7 @@ export default function GoalsPage() {
                     <div className="text-3xl">{goalType.icon}</div>
                     <div>
                       <h3 className="font-semibold text-gray-900">{goal.name}</h3>
+                      <CompanyBadge companyId={(goal as any).my_company_id} />
                       <div className="flex items-center gap-2">
                         <Badge variant={getStatusColor(goal.status) as 'info' | 'success' | 'danger' | 'default'}>
                           {getStatusLabel(goal.status)}
@@ -399,6 +404,11 @@ export default function GoalsPage() {
       {/* Modal */}
       <Modal isOpen={showModal} onClose={closeModal} title={editingGoal ? 'Editar Meta' : 'Nueva Meta'}>
           <form onSubmit={handleSubmit} className="space-y-4">
+            <CompanySelector
+              value={formCompanyId || selectedCompanyId || ''}
+              onChange={(id) => setFormCompanyId(id)}
+              label="Empresa"
+            />
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Nombre de la Meta *</label>
               <Input

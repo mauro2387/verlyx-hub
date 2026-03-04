@@ -4,7 +4,8 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { MainLayout, PageHeader } from '@/components/layout';
 import { Card, Button, Input, Badge, Modal } from '@/components/ui';
-import { useAuthStore } from '@/lib/store';
+import { useAuthStore, useCompanyStore } from '@/lib/store';
+import { CompanyBadge, CompanySelector } from '@/components/ui';
 import { enterpriseHelpers } from '@/lib/enterprise-helpers';
 import { formatCurrency } from '@/lib/utils';
 
@@ -30,6 +31,8 @@ interface Product {
 export default function ProductsPage() {
   const router = useRouter();
   const { user } = useAuthStore();
+  const { selectedCompanyId } = useCompanyStore();
+  const [formCompanyId, setFormCompanyId] = useState(selectedCompanyId || '');
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -91,6 +94,7 @@ export default function ProductsPage() {
       // Create
       const { error } = await enterpriseHelpers.products.create({
         userId: user.id,
+        myCompanyId: formCompanyId || selectedCompanyId || undefined,
         name: formData.name,
         description: formData.description || undefined,
         sku: formData.sku || undefined,
@@ -310,6 +314,7 @@ export default function ProductsPage() {
               </div>
               
               <h3 className="font-semibold text-gray-900 mb-1">{product.name}</h3>
+              <CompanyBadge companyId={(product as any).my_company_id} />
               {product.sku && (
                 <p className="text-xs text-gray-400 mb-2">SKU: {product.sku}</p>
               )}
@@ -351,6 +356,11 @@ export default function ProductsPage() {
       {/* Modal */}
       <Modal isOpen={showModal} onClose={closeModal} title={editingProduct ? 'Editar Producto' : 'Nuevo Producto'}>
           <form onSubmit={handleSubmit} className="space-y-4">
+            <CompanySelector
+              value={formCompanyId || selectedCompanyId || ''}
+              onChange={(id) => setFormCompanyId(id)}
+              label="Empresa"
+            />
             <div className="grid grid-cols-2 gap-4">
               <div className="col-span-2">
                 <label className="block text-sm font-medium text-gray-700 mb-1">Nombre *</label>

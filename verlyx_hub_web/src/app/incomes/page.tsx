@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useMemo } from 'react';
 import { MainLayout, PageHeader } from '@/components/layout';
-import { Button, Card, CardContent, Loading, Modal, Input, Select, Textarea, StatCard, SearchInput, Badge, ConfirmDialog } from '@/components/ui';
+import { Button, Card, CardContent, Loading, Modal, Input, Select, Textarea, StatCard, SearchInput, Badge, ConfirmDialog, CompanyBadge, CompanySelector } from '@/components/ui';
 import { useIncomesStore, useCategoriesStore, useAccountsStore, useClientsStore, useProjectsStore, useCompanyStore } from '@/lib/store';
 import { Income } from '@/lib/types';
 import { formatCurrency, formatDate } from '@/lib/utils';
@@ -16,6 +16,7 @@ export default function IncomesPage() {
   const { clients, fetchClients } = useClientsStore();
   const { projects, fetchProjects } = useProjectsStore();
   const { selectedCompanyId } = useCompanyStore();
+  const [formCompanyId, setFormCompanyId] = useState(selectedCompanyId || '');
   
   const [viewMode, setViewMode] = useState<ViewMode>('table');
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -174,13 +175,14 @@ export default function IncomesPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!selectedCompanyId) {
+    const companyId = formCompanyId || selectedCompanyId;
+    if (!companyId) {
       alert('Selecciona una empresa activa primero');
       return;
     }
 
     const incomeData = {
-      myCompanyId: selectedCompanyId,
+      myCompanyId: companyId,
       description: formData.description,
       amount: parseFloat(formData.amount),
       currency: formData.currency,
@@ -410,7 +412,10 @@ export default function IncomesPage() {
                             {income.paymentDate ? formatDate(income.paymentDate) : '-'}
                           </td>
                           <td className="py-3 px-4">
-                            <div className="font-medium">{income.description}</div>
+                            <div className="flex items-center gap-2">
+                              <div className="font-medium">{income.description}</div>
+                              <CompanyBadge companyId={(income as any).myCompanyId || (income as any).my_company_id} />
+                            </div>
                             {income.invoiceNumber && (
                               <div className="text-sm text-gray-500">Fact: {income.invoiceNumber}</div>
                             )}
@@ -623,6 +628,14 @@ export default function IncomesPage() {
         title={editingIncome ? 'Editar Ingreso' : 'Nuevo Ingreso'}
       >
         <form onSubmit={handleSubmit} className="space-y-6">
+          {/* Company Selector */}
+          <CompanySelector
+            value={formCompanyId || selectedCompanyId || ''}
+            onChange={(id) => setFormCompanyId(id)}
+            label="Empresa propietaria"
+            required
+          />
+
           {/* Info Básica */}
           <div className="space-y-4">
             <h3 className="font-semibold text-lg">📝 Información Básica</h3>

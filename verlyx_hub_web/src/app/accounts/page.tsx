@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { MainLayout, PageHeader } from '@/components/layout';
-import { Button, Card, CardContent, Loading, Modal, Input, Select, StatCard, ConfirmDialog, Badge } from '@/components/ui';
+import { Button, Card, CardContent, Loading, Modal, Input, Select, StatCard, ConfirmDialog, Badge, CompanyBadge, CompanySelector } from '@/components/ui';
 import { useAccountsStore, useCompanyStore } from '@/lib/store';
 import { Account } from '@/lib/types';
 import { formatCurrency } from '@/lib/utils';
@@ -10,6 +10,7 @@ import { formatCurrency } from '@/lib/utils';
 export default function AccountsPage() {
   const { accounts, isLoading, fetchAccounts, addAccount, updateAccount, deleteAccount, getTotalBalance } = useAccountsStore();
   const { selectedCompanyId } = useCompanyStore();
+  const [formCompanyId, setFormCompanyId] = useState(selectedCompanyId || '');
   
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingAccount, setEditingAccount] = useState<Account | null>(null);
@@ -92,7 +93,7 @@ export default function AccountsPage() {
     }
 
     const accountData = {
-      myCompanyId: selectedCompanyId,
+      myCompanyId: formCompanyId || selectedCompanyId || '',
       name: formData.name,
       type: formData.type,
       currency: formData.currency,
@@ -200,6 +201,7 @@ export default function AccountsPage() {
                           <div className="flex items-center gap-2 mb-1">
                             <span style={{ fontSize: '20px' }}>{account.icon || config.icon}</span>
                             <h4 className="font-semibold">{account.name}</h4>
+                            <CompanyBadge companyId={(account as any).myCompanyId || (account as any).my_company_id} />
                           </div>
                           {account.bankName && (
                             <div className="text-sm text-gray-500">{account.bankName}</div>
@@ -278,6 +280,12 @@ export default function AccountsPage() {
         title={editingAccount ? 'Editar Cuenta' : 'Nueva Cuenta'}
       >
         <form onSubmit={handleSubmit} className="space-y-6">
+          <CompanySelector
+            value={formCompanyId || selectedCompanyId || ''}
+            onChange={(id) => setFormCompanyId(id)}
+            label="Empresa propietaria"
+            required
+          />
           <div className="space-y-4">
             <Input
               label="Nombre de la Cuenta *"

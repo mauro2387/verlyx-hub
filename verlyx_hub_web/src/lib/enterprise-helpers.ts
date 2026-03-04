@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { useCompanyStore } from './store';
 
 // ==========================================
 // ENTERPRISE MODULES HELPERS
@@ -38,6 +39,7 @@ export const enterpriseHelpers = {
     
     async create(quote: {
       userId: string;
+      myCompanyId?: string;
       contactName?: string;
       contactEmail?: string;
       contactPhone?: string;
@@ -59,6 +61,7 @@ export const enterpriseHelpers = {
       const quoteNumber = `COT-${Date.now().toString(36).toUpperCase()}`;
       
       // Create quote
+      const companyId = quote.myCompanyId || useCompanyStore.getState().selectedCompanyId;
       const { data: quoteData, error: quoteError } = await supabase
         .from('quotes')
         .insert({
@@ -77,6 +80,7 @@ export const enterpriseHelpers = {
           subtotal: 0,
           tax_amount: 0,
           total: 0,
+          my_company_id: companyId,
         })
         .select()
         .single();
@@ -287,6 +291,7 @@ export const enterpriseHelpers = {
     
     async startTimer(timer: {
       userId: string;
+      myCompanyId?: string;
       projectName?: string;
       taskName?: string;
       description?: string;
@@ -294,6 +299,7 @@ export const enterpriseHelpers = {
       // First, stop any existing timer
       await this.stopTimer(timer.userId);
       
+      const timerCompanyId = timer.myCompanyId || useCompanyStore.getState().selectedCompanyId;
       const { data, error } = await supabase
         .from('active_timers')
         .insert({
@@ -302,6 +308,7 @@ export const enterpriseHelpers = {
           task_name: timer.taskName,
           description: timer.description,
           started_at: new Date().toISOString(),
+          my_company_id: timerCompanyId,
         })
         .select()
         .single();
@@ -348,6 +355,7 @@ export const enterpriseHelpers = {
     
     async createManualEntry(entry: {
       userId: string;
+      myCompanyId?: string;
       projectName?: string;
       taskName?: string;
       description?: string;
@@ -360,6 +368,7 @@ export const enterpriseHelpers = {
       const endTime = new Date(entry.endTime);
       const durationMinutes = Math.round((endTime.getTime() - startTime.getTime()) / 60000);
       
+      const entryCompanyId = entry.myCompanyId || useCompanyStore.getState().selectedCompanyId;
       const { data, error } = await supabase
         .from('time_entries')
         .insert({
@@ -372,6 +381,7 @@ export const enterpriseHelpers = {
           duration_minutes: durationMinutes,
           is_billable: entry.isBillable ?? true,
           hourly_rate: entry.hourlyRate,
+          my_company_id: entryCompanyId,
         })
         .select()
         .single();
@@ -415,6 +425,7 @@ export const enterpriseHelpers = {
     
     async create(product: {
       userId: string;
+      myCompanyId?: string;
       sku?: string;
       name: string;
       description?: string;
@@ -429,6 +440,7 @@ export const enterpriseHelpers = {
       tags?: string[];
       imageUrl?: string;
     }) {
+      const prodCompanyId = product.myCompanyId || useCompanyStore.getState().selectedCompanyId;
       const { data, error } = await supabase
         .from('products')
         .insert({
@@ -447,6 +459,7 @@ export const enterpriseHelpers = {
           tags: product.tags || [],
           image_url: product.imageUrl,
           is_active: true,
+          my_company_id: prodCompanyId,
         })
         .select()
         .single();
@@ -541,6 +554,7 @@ export const enterpriseHelpers = {
     
     async create(goal: {
       userId: string;
+      myCompanyId?: string;
       name: string;
       description?: string;
       goalType: string;
@@ -549,6 +563,7 @@ export const enterpriseHelpers = {
       startDate: string;
       endDate: string;
     }) {
+      const goalCompanyId = goal.myCompanyId || useCompanyStore.getState().selectedCompanyId;
       const { data, error } = await supabase
         .from('goals')
         .insert({
@@ -562,6 +577,7 @@ export const enterpriseHelpers = {
           start_date: goal.startDate,
           end_date: goal.endDate,
           status: 'active',
+          my_company_id: goalCompanyId,
         })
         .select()
         .single();
@@ -665,6 +681,7 @@ export const enterpriseHelpers = {
     
     async create(automation: {
       userId: string;
+      myCompanyId?: string;
       name: string;
       description?: string;
       triggerType: string;
@@ -675,6 +692,7 @@ export const enterpriseHelpers = {
         delayMinutes?: number;
       }>;
     }) {
+      const autoCompanyId = automation.myCompanyId || useCompanyStore.getState().selectedCompanyId;
       const { data: automationData, error: automationError } = await supabase
         .from('automations')
         .insert({
@@ -684,6 +702,7 @@ export const enterpriseHelpers = {
           trigger_type: automation.triggerType,
           trigger_conditions: automation.triggerConditions || {},
           is_active: true,
+          my_company_id: autoCompanyId,
         })
         .select()
         .single();
@@ -797,6 +816,7 @@ export const enterpriseHelpers = {
     
     async create(member: {
       userId: string;
+      myCompanyId?: string;
       firstName: string;
       lastName: string;
       email: string;
@@ -813,6 +833,7 @@ export const enterpriseHelpers = {
       commissionPercent?: number;
       notes?: string;
     }) {
+      const memberCompanyId = member.myCompanyId || useCompanyStore.getState().selectedCompanyId;
       const { data, error } = await supabase
         .from('team_members')
         .insert({
@@ -833,6 +854,7 @@ export const enterpriseHelpers = {
           hourly_rate: member.hourlyRate,
           commission_percent: member.commissionPercent,
           notes: member.notes,
+          my_company_id: memberCompanyId,
         })
         .select()
         .single();
