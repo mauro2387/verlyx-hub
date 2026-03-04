@@ -143,7 +143,7 @@ BEGIN
     'prospecting_campaigns', 'recurring_payment_schedules',
     'scheduled_communications', 'transactions', 'workspaces',
     'ai_request_logs', 'ai_usage_summary',
-    'contact_segment_members', 'lead_scoring_rules'
+    'lead_scoring_rules'
   ])
   LOOP
     -- Drop existing policy if any (to make idempotent)
@@ -234,6 +234,20 @@ CREATE POLICY rls_tasks_access ON public.tasks
 DROP POLICY IF EXISTS rls_company_users ON public.company_users;
 CREATE POLICY rls_company_users ON public.company_users
   FOR ALL USING (user_id = auth.uid());
+
+-- contact_segment_members: via segment → company
+DROP POLICY IF EXISTS rls_segment_members ON public.contact_segment_members;
+CREATE POLICY rls_segment_members ON public.contact_segment_members
+  FOR ALL USING (
+    segment_id IN (
+      SELECT cs.id FROM public.contact_segments cs
+      WHERE cs.my_company_id IN (
+        SELECT id FROM public.my_companies WHERE user_id = auth.uid()
+        UNION
+        SELECT company_id FROM public.company_users WHERE user_id = auth.uid() AND is_active = true
+      )
+    )
+  );
 
 -- notification_preferences: own only
 DROP POLICY IF EXISTS rls_notification_prefs ON public.notification_preferences;
