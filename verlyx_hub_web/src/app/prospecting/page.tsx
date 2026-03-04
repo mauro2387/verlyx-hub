@@ -138,6 +138,11 @@ export default function ProspectingPage() {
   const [isSendingEmails, setIsSendingEmails] = useState(false);
   const [emailSendResult, setEmailSendResult] = useState<{ sent: number; failed: number; noEmail: number } | null>(null);
 
+  // WhatsApp bulk
+  const [isWhatsAppModalOpen, setIsWhatsAppModalOpen] = useState(false);
+  const [waMessage, setWaMessage] = useState('');
+  const [waOpenedIndexes, setWaOpenedIndexes] = useState<Set<number>>(new Set());
+
   useEffect(() => {
     if (selectedCompanyId) fetchLeads();
   }, [selectedCompanyId, fetchLeads]);
@@ -355,6 +360,32 @@ export default function ProspectingPage() {
   const selectedLeadsWithEmail = useMemo(() => {
     return leads.filter(l => selectedLeadIds.has(l.id) && l.contactEmail);
   }, [leads, selectedLeadIds]);
+
+  const selectedLeadsWithPhone = useMemo(() => {
+    return leads.filter(l => selectedLeadIds.has(l.id) && l.contactPhone);
+  }, [leads, selectedLeadIds]);
+
+  const handleOpenBulkWhatsApp = useCallback(() => {
+    setWaMessage('');
+    setWaOpenedIndexes(new Set());
+    setIsWhatsAppModalOpen(true);
+  }, []);
+
+  const buildWaLink = useCallback((phone: string, message: string, lead: Lead) => {
+    const cleanPhone = phone.replace(/[^\d+]/g, '').replace(/^\+/, '');
+    let personalized = message
+      .replace(/\{\{nombre\}\}/g, lead.contactName || lead.companyName || '')
+      .replace(/\{\{empresa\}\}/g, lead.companyName || '')
+      .replace(/\{\{mi_empresa\}\}/g, 'Pulsarmoon');
+    return `https://wa.me/${cleanPhone}?text=${encodeURIComponent(personalized)}`;
+  }, []);
+
+  const handleMarkWaSent = useCallback(async (index: number, lead: Lead) => {
+    setWaOpenedIndexes(prev => new Set(prev).add(index));
+    if (lead.status === 'not_contacted') {
+      await updateLead(lead.id, { status: 'contacted', channel: 'whatsapp' });
+    }
+  }, [updateLead]);
 
   const handleOpenBulkEmail = useCallback(() => {
     setEmailSubject('');
@@ -1097,11 +1128,9 @@ export default function ProspectingPage() {
                 <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 flex items-center justify-between">
                   <span className="text-sm font-medium text-blue-800">
                     {selectedLeadIds.size} lead{selectedLeadIds.size > 1 ? 's' : ''} seleccionado{selectedLeadIds.size > 1 ? 's' : ''}
-                    {selectedLeadsWithEmail.length > 0 && (
-                      <span className="text-blue-600 ml-1">
-                        ({selectedLeadsWithEmail.length} con email)
-                      </span>
-                    )}
+                    <span className="text-blue-600 ml-1">
+                      ({selectedLeadsWithEmail.length} con email, {selectedLeadsWithPhone.length} con tel.)
+                    </span>
                   </span>
                   <div className="flex items-center gap-2">
                     <Button
@@ -1115,6 +1144,19 @@ export default function ProspectingPage() {
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                         </svg>
                         Enviar email masivo
+                      </span>
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={handleOpenBulkWhatsApp}
+                      disabled={selectedLeadsWithPhone.length === 0}
+                      className="bg-green-600 hover:bg-green-700"
+                    >
+                      <span className="flex items-center gap-1.5">
+                        <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                          <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/>
+                        </svg>
+                        WhatsApp masivo
                       </span>
                     </Button>
                     <Button
@@ -1418,6 +1460,49 @@ export default function ProspectingPage() {
                 </Card>
               </div>
 
+              {/* WhatsApp templates */}
+              <Card>
+                <CardContent className="p-4">
+                  <h3 className="text-sm font-medium text-gray-900 mb-3">Plantillas de WhatsApp</h3>
+                  <p className="text-xs text-gray-500 mb-3">Se abre WhatsApp Web para cada lead — sin necesidad de API</p>
+                  <div className="grid grid-cols-3 gap-3">
+                    <button
+                      onClick={() => {
+                        setWaMessage('Hola {{nombre}}, soy de {{mi_empresa}} 👋\n\nVi que tienen {{empresa}} y me gustaría presentarles nuestros servicios que pueden ser de gran utilidad.\n\n¿Tendrían unos minutos para conversar?');
+                        setWaOpenedIndexes(new Set());
+                        setIsWhatsAppModalOpen(true);
+                      }}
+                      className="p-3 text-left border rounded-lg hover:border-green-300 hover:bg-green-50 transition-colors"
+                    >
+                      <div className="text-sm font-medium text-gray-900">💬 Primer contacto</div>
+                      <div className="text-xs text-gray-500 mt-1">Presentación inicial por WhatsApp</div>
+                    </button>
+                    <button
+                      onClick={() => {
+                        setWaMessage('Hola {{nombre}} 👋\n\nTe escribo de {{mi_empresa}} para hacer seguimiento. ¿Pudieron evaluar nuestra propuesta?\n\nQuedo a las órdenes para cualquier consulta.');
+                        setWaOpenedIndexes(new Set());
+                        setIsWhatsAppModalOpen(true);
+                      }}
+                      className="p-3 text-left border rounded-lg hover:border-green-300 hover:bg-green-50 transition-colors"
+                    >
+                      <div className="text-sm font-medium text-gray-900">🔄 Follow-up</div>
+                      <div className="text-xs text-gray-500 mt-1">Seguimiento por WhatsApp</div>
+                    </button>
+                    <button
+                      onClick={() => {
+                        setWaMessage('Hola {{nombre}} 👋\n\nDesde {{mi_empresa}} tenemos una promoción especial que pensamos puede interesarle a {{empresa}}.\n\n[Describir oferta]\n\n¿Les gustaría saber más?');
+                        setWaOpenedIndexes(new Set());
+                        setIsWhatsAppModalOpen(true);
+                      }}
+                      className="p-3 text-left border rounded-lg hover:border-green-300 hover:bg-green-50 transition-colors"
+                    >
+                      <div className="text-sm font-medium text-gray-900">🎯 Oferta especial</div>
+                      <div className="text-xs text-gray-500 mt-1">Propuesta con oferta/descuento</div>
+                    </button>
+                  </div>
+                </CardContent>
+              </Card>
+
               {/* Email templates */}
               <Card>
                 <CardContent className="p-4">
@@ -1695,6 +1780,129 @@ export default function ProspectingPage() {
                 </Button>
               </div>
             </>
+          )}
+        </div>
+      </Modal>
+
+      {/* Bulk WhatsApp Modal */}
+      <Modal
+        isOpen={isWhatsAppModalOpen}
+        onClose={() => setIsWhatsAppModalOpen(false)}
+        title="Enviar WhatsApp masivo"
+        size="lg"
+      >
+        <div className="space-y-4">
+          <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+            <div className="flex items-center gap-2 mb-1">
+              <svg className="w-5 h-5 text-green-600" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/>
+                <path d="M12 0C5.373 0 0 5.373 0 12c0 2.625.846 5.059 2.284 7.034L.789 23.492a.5.5 0 00.612.638l4.685-1.323A11.955 11.955 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 22c-2.24 0-4.326-.658-6.085-1.79l-.427-.271-2.796.79.73-2.882-.28-.44A9.96 9.96 0 012 12C2 6.486 6.486 2 12 2s10 4.486 10 10-4.486 10-10 10z"/>
+              </svg>
+              <span className="text-sm font-medium text-green-800">Sin API — se abre WhatsApp Web para cada lead</span>
+            </div>
+            <p className="text-xs text-green-700">Escribí el mensaje una vez y hacé click en cada lead para abrir WhatsApp con el mensaje personalizado. Después de enviar, marcá como enviado.</p>
+          </div>
+
+          <div className="bg-gray-50 border rounded-lg p-3">
+            <div className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">Leads con teléfono</div>
+            <div className="text-sm text-gray-700">
+              {selectedLeadsWithPhone.length} lead{selectedLeadsWithPhone.length !== 1 ? 's' : ''} con teléfono
+              {selectedLeadIds.size - selectedLeadsWithPhone.length > 0 && (
+                <span className="text-amber-500 ml-2">
+                  ({selectedLeadIds.size - selectedLeadsWithPhone.length} sin teléfono serán omitidos)
+                </span>
+              )}
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Mensaje de WhatsApp
+              <span className="text-xs text-gray-400 ml-2">
+                Variables: {'{{nombre}}'} {'{{empresa}}'} {'{{mi_empresa}}'}
+              </span>
+            </label>
+            <textarea
+              value={waMessage}
+              onChange={(e) => setWaMessage(e.target.value)}
+              rows={5}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-green-500"
+              placeholder="Hola {{nombre}}, soy de {{mi_empresa}}..."
+            />
+          </div>
+
+          {waMessage.trim() && selectedLeadsWithPhone.length > 0 && (
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm font-medium text-gray-700">Enviar a cada lead</span>
+                <span className="text-xs text-gray-500">
+                  {waOpenedIndexes.size} / {selectedLeadsWithPhone.length} enviados
+                </span>
+              </div>
+              <div className="space-y-2 max-h-[300px] overflow-y-auto">
+                {selectedLeadsWithPhone.map((lead, idx) => {
+                  const opened = waOpenedIndexes.has(idx);
+                  const waLink = buildWaLink(lead.contactPhone!, waMessage, lead);
+                  return (
+                    <div key={lead.id} className={cn(
+                      'flex items-center justify-between p-3 rounded-lg border transition-colors',
+                      opened ? 'bg-green-50 border-green-200' : 'bg-white border-gray-200'
+                    )}>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          {opened && <span className="text-green-600">✓</span>}
+                          <span className="text-sm font-medium text-gray-900 truncate">{lead.companyName}</span>
+                        </div>
+                        <div className="text-xs text-gray-500 mt-0.5">
+                          {lead.contactName && <span>{lead.contactName} · </span>}
+                          {lead.contactPhone}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 flex-shrink-0 ml-3">
+                        <a
+                          href={waLink}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={() => handleMarkWaSent(idx, lead)}
+                          className={cn(
+                            'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors',
+                            opened
+                              ? 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                              : 'bg-green-600 text-white hover:bg-green-700'
+                          )}
+                        >
+                          <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/>
+                          </svg>
+                          {opened ? 'Abrir de nuevo' : 'Enviar'}
+                        </a>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {waOpenedIndexes.size > 0 && (
+                <div className="flex items-center justify-between mt-4 pt-3 border-t">
+                  <div className="text-sm text-gray-600">
+                    <span className="font-medium text-green-600">{waOpenedIndexes.size}</span> WhatsApps abiertos
+                  </div>
+                  <Button
+                    size="sm"
+                    onClick={() => { setIsWhatsAppModalOpen(false); setSelectedLeadIds(new Set()); }}
+                    className="bg-green-600 hover:bg-green-700"
+                  >
+                    Listo
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {!waMessage.trim() && (
+            <div className="text-center py-4 text-sm text-gray-500">
+              Escribí un mensaje arriba para ver la lista de leads
+            </div>
           )}
         </div>
       </Modal>
