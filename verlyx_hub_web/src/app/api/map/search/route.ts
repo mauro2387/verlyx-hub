@@ -47,16 +47,29 @@ async function handleGeocode(body: { query: string }) {
   url.searchParams.set('addressdetails', '1');
   url.searchParams.set('limit', '5');
 
-  const response = await fetch(url.toString(), {
-    headers: { 'User-Agent': 'VerlyxHub/1.0', 'Accept-Language': 'es' },
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10000);
 
-  if (!response.ok) {
-    return NextResponse.json({ error: 'Geocoding failed' }, { status: response.status });
+  try {
+    const response = await fetch(url.toString(), {
+      headers: { 'User-Agent': 'VerlyxHub/1.0', 'Accept-Language': 'es' },
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+
+    if (!response.ok) {
+      return NextResponse.json({ error: 'Geocoding failed' }, { status: response.status });
+    }
+
+    const data = await response.json();
+    return NextResponse.json({ results: data });
+  } catch (err: unknown) {
+    clearTimeout(timeout);
+    if (err instanceof Error && err.name === 'AbortError') {
+      return NextResponse.json({ error: 'Geocoding timeout', results: [] }, { status: 200 });
+    }
+    throw err;
   }
-
-  const data = await response.json();
-  return NextResponse.json({ results: data });
 }
 
 // ==========================================
@@ -70,16 +83,29 @@ async function handleReverseGeocode(body: { lat: number; lng: number }) {
   url.searchParams.set('format', 'json');
   url.searchParams.set('addressdetails', '1');
 
-  const response = await fetch(url.toString(), {
-    headers: { 'User-Agent': 'VerlyxHub/1.0', 'Accept-Language': 'es' },
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10000);
 
-  if (!response.ok) {
-    return NextResponse.json({ error: 'Reverse geocoding failed' }, { status: response.status });
+  try {
+    const response = await fetch(url.toString(), {
+      headers: { 'User-Agent': 'VerlyxHub/1.0', 'Accept-Language': 'es' },
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+
+    if (!response.ok) {
+      return NextResponse.json({ error: 'Reverse geocoding failed' }, { status: response.status });
+    }
+
+    const data = await response.json();
+    return NextResponse.json({ result: data });
+  } catch (err: unknown) {
+    clearTimeout(timeout);
+    if (err instanceof Error && err.name === 'AbortError') {
+      return NextResponse.json({ error: 'Reverse geocoding timeout', result: null }, { status: 200 });
+    }
+    throw err;
   }
-
-  const data = await response.json();
-  return NextResponse.json({ result: data });
 }
 
 // ==========================================
@@ -106,27 +132,47 @@ async function handleOverpassSearch(body: {
     })
     .join('');
 
+  // Limit radius to 5km max for performance
+  const effectiveRadius = Math.min(radiusKm || 2, 5);
+
   let query: string;
-  if (center && radiusKm) {
-    query = `[out:json][timeout:25];(node${tagFilters}(around:${radiusKm * 1000},${center.lat},${center.lng});way${tagFilters}(around:${radiusKm * 1000},${center.lat},${center.lng}););out center tags;`;
+  if (center && effectiveRadius) {
+    query = `[out:json][timeout:15];(node${tagFilters}(around:${effectiveRadius * 1000},${center.lat},${center.lng});way${tagFilters}(around:${effectiveRadius * 1000},${center.lat},${center.lng}););out center tags 100;`;
   } else if (bounds) {
     const bbox = `${bounds.south},${bounds.west},${bounds.north},${bounds.east}`;
-    query = `[out:json][timeout:25];(node${tagFilters}(${bbox});way${tagFilters}(${bbox}););out center tags;`;
+    query = `[out:json][timeout:15];(node${tagFilters}(${bbox});way${tagFilters}(${bbox}););out center tags 100;`;
   } else {
     return NextResponse.json({ error: 'Provide bounds or center+radiusKm' }, { status: 400 });
   }
 
-  const response = await fetch(OVERPASS_BASE, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: `data=${encodeURIComponent(query)}`,
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 20000);
 
-  if (!response.ok) {
-    return NextResponse.json({ error: 'Overpass API error' }, { status: response.status });
+  let data: any;
+  try {
+    const response = await fetch(OVERPASS_BASE, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: `data=${encodeURIComponent(query)}`,
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => '');
+      console.error('Overpass error:', response.status, text.slice(0, 200));
+      // Return empty results instead of error so UI doesn't break
+      return NextResponse.json({ results: [], total: 0, error: 'Overpass API ocupado, intentá de nuevo en unos segundos' });
+    }
+
+    data = await response.json();
+  } catch (err: unknown) {
+    clearTimeout(timeout);
+    if (err instanceof Error && err.name === 'AbortError') {
+      return NextResponse.json({ results: [], total: 0, error: 'Búsqueda tardó demasiado. Probá con un radio más chico.' });
+    }
+    return NextResponse.json({ results: [], total: 0, error: 'Error de conexión con Overpass API' });
   }
-
-  const data = await response.json();
   const elements = (data.elements || [])
     .filter((el: any) => el.tags?.name)
     .map((el: any) => ({

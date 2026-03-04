@@ -165,9 +165,12 @@ export default function ProspectingPage() {
         body: JSON.stringify(body),
       });
 
-      if (!res.ok) throw new Error('Search failed');
-
       const data = await res.json();
+
+      if (data.error && (!data.results || data.results.length === 0)) {
+        console.warn('Search warning:', data.error);
+      }
+
       setProspectResults(data.results || []);
     } catch (err) {
       console.error('Search error:', err);
