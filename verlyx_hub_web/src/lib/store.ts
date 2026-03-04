@@ -2784,18 +2784,18 @@ export const useLeadsStore = create<LeadsState>((set, get) => ({
         companyName: d.company_name,
         businessType: d.business_type,
         address: d.address,
-        lat: d.lat,
-        lng: d.lng,
+        lat: d.latitude,
+        lng: d.longitude,
         contactName: d.contact_name,
         contactEmail: d.contact_email,
         contactPhone: d.contact_phone,
         website: d.website,
         source: d.source,
-        channel: d.channel,
+        channel: d.contact_channel,
         status: d.status,
         prospectScore: d.prospect_score || 0,
-        contactAttempts: d.contact_attempts || 0,
-        lastContactedAt: d.last_contacted_at,
+        contactAttempts: d.total_contact_attempts || 0,
+        lastContactedAt: d.last_contact_date,
         notes: d.notes,
         osmId: d.osm_id,
         osmTags: d.osm_tags,
@@ -2888,14 +2888,14 @@ export const useLeadsStore = create<LeadsState>((set, get) => ({
         company_name: lead.companyName,
         business_type: lead.businessType,
         address: lead.address,
-        lat: lead.lat,
-        lng: lead.lng,
+        latitude: lead.lat,
+        longitude: lead.lng,
         contact_name: lead.contactName,
         contact_email: lead.contactEmail,
         contact_phone: lead.contactPhone,
         website: lead.website,
         source: lead.source || 'manual',
-        channel: lead.channel,
+        contact_channel: lead.channel,
         status: lead.status || 'not_contacted',
         prospect_score: lead.prospectScore || 0,
         notes: lead.notes,
@@ -2916,18 +2916,18 @@ export const useLeadsStore = create<LeadsState>((set, get) => ({
         companyName: data.company_name,
         businessType: data.business_type,
         address: data.address,
-        lat: data.lat,
-        lng: data.lng,
+        lat: data.latitude,
+        lng: data.longitude,
         contactName: data.contact_name,
         contactEmail: data.contact_email,
         contactPhone: data.contact_phone,
         website: data.website,
         source: data.source,
-        channel: data.channel,
+        channel: data.contact_channel,
         status: data.status,
         prospectScore: data.prospect_score || 0,
-        contactAttempts: data.contact_attempts || 0,
-        lastContactedAt: data.last_contacted_at,
+        contactAttempts: data.total_contact_attempts || 0,
+        lastContactedAt: data.last_contact_date,
         notes: data.notes,
         osmId: data.osm_id,
         osmTags: data.osm_tags,
@@ -2942,7 +2942,11 @@ export const useLeadsStore = create<LeadsState>((set, get) => ({
         updatedAt: data.updated_at,
       };
       set(state => ({ leads: [newLead, ...state.leads] }));
+      toast.success('Lead guardado', `"${newLead.companyName}" agregado a tus leads`);
       return newLead;
+    }
+    if (error) {
+      toast.error('Error al guardar lead', error.message);
     }
     return null;
   },
@@ -2952,14 +2956,14 @@ export const useLeadsStore = create<LeadsState>((set, get) => ({
     if (updates.companyName !== undefined) dbUpdates.company_name = updates.companyName;
     if (updates.businessType !== undefined) dbUpdates.business_type = updates.businessType;
     if (updates.address !== undefined) dbUpdates.address = updates.address;
-    if (updates.lat !== undefined) dbUpdates.lat = updates.lat;
-    if (updates.lng !== undefined) dbUpdates.lng = updates.lng;
+    if (updates.lat !== undefined) dbUpdates.latitude = updates.lat;
+    if (updates.lng !== undefined) dbUpdates.longitude = updates.lng;
     if (updates.contactName !== undefined) dbUpdates.contact_name = updates.contactName;
     if (updates.contactEmail !== undefined) dbUpdates.contact_email = updates.contactEmail;
     if (updates.contactPhone !== undefined) dbUpdates.contact_phone = updates.contactPhone;
     if (updates.website !== undefined) dbUpdates.website = updates.website;
     if (updates.source !== undefined) dbUpdates.source = updates.source;
-    if (updates.channel !== undefined) dbUpdates.channel = updates.channel;
+    if (updates.channel !== undefined) dbUpdates.contact_channel = updates.channel;
     if (updates.status !== undefined) dbUpdates.status = updates.status;
     if (updates.prospectScore !== undefined) dbUpdates.prospect_score = updates.prospectScore;
     if (updates.notes !== undefined) dbUpdates.notes = updates.notes;

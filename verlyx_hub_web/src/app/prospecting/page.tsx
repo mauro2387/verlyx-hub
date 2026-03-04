@@ -591,7 +591,7 @@ export default function ProspectingPage() {
               </div>
 
               {/* Map */}
-              <div className="flex-1 rounded-xl overflow-hidden border border-gray-200 shadow-sm relative">
+              <div className="flex-1 rounded-xl overflow-hidden border border-gray-200 shadow-sm relative z-0">
                 <ProspectingMap
                   center={mapCenter}
                   zoom={mapZoom}

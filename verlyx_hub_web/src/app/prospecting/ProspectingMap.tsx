@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useMemo } from 'react';
+import { useEffect, useRef, useMemo, useCallback } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import type { ProspectMarker, GeoPoint } from '@/lib/map-service';
@@ -90,12 +90,19 @@ export default function ProspectingMap({
   const prospectLayerRef = useRef<L.LayerGroup | null>(null);
   const leadLayerRef = useRef<L.LayerGroup | null>(null);
   const radiusCircleRef = useRef<L.Circle | null>(null);
+  const isProgrammaticMove = useRef(false);
+  const prevCenter = useRef({ lat: center.lat, lng: center.lng });
+  const prevZoom = useRef(zoom);
 
   // Set of existing OSM IDs (to mark "already saved")
   const savedOsmIds = useMemo(
     () => new Set(leads.filter(l => l.osmId).map(l => l.osmId)),
     [leads]
   );
+
+  // Stable callback ref for onMapMove
+  const onMapMoveRef = useRef(onMapMove);
+  onMapMoveRef.current = onMapMove;
 
   // Initialize map
   useEffect(() => {
@@ -118,10 +125,14 @@ export default function ProspectingMap({
     prospectLayerRef.current = L.layerGroup().addTo(map);
     leadLayerRef.current = L.layerGroup().addTo(map);
 
-    // Track map center when user pans
+    // Track map center when user pans (not programmatic moves)
     map.on('moveend', () => {
+      if (isProgrammaticMove.current) {
+        isProgrammaticMove.current = false;
+        return;
+      }
       const c = map.getCenter();
-      onMapMove({ lat: c.lat, lng: c.lng });
+      onMapMoveRef.current({ lat: c.lat, lng: c.lng });
     });
 
     mapRef.current = map;
@@ -133,10 +144,22 @@ export default function ProspectingMap({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Update center/zoom from props
+  // Update center/zoom from props — only when it actually changed programmatically
+  // (not from user panning, which already updated the map)
   useEffect(() => {
     if (!mapRef.current) return;
-    mapRef.current.setView([center.lat, center.lng], zoom, { animate: true });
+    const latDiff = Math.abs(center.lat - prevCenter.current.lat);
+    const lngDiff = Math.abs(center.lng - prevCenter.current.lng);
+    const zoomChanged = zoom !== prevZoom.current;
+
+    // Only fly to new position if the change is significant (> ~100m) or zoom changed
+    if (latDiff > 0.001 || lngDiff > 0.001 || zoomChanged) {
+      isProgrammaticMove.current = true;
+      mapRef.current.setView([center.lat, center.lng], zoom, { animate: true });
+    }
+
+    prevCenter.current = { lat: center.lat, lng: center.lng };
+    prevZoom.current = zoom;
   }, [center.lat, center.lng, zoom]);
 
   // Render radius circle
@@ -231,7 +254,7 @@ export default function ProspectingMap({
   }, [leads, onSelectLead]);
 
   return (
-    <div ref={mapContainerRef} className="w-full h-full" style={{ minHeight: 400 }} />
+    <div ref={mapContainerRef} className="w-full h-full relative z-0" style={{ minHeight: 400 }} />
   );
 }
 
