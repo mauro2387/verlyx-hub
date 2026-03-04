@@ -1,9 +1,9 @@
 'use client';
 
-import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import dynamic from 'next/dynamic';
-import { MainLayout, PageHeader } from '@/components/layout';
-import { Button, Card, CardContent, Loading, Modal, Input, Textarea, Select, Badge, SearchInput, StatCard } from '@/components/ui';
+import { MainLayout } from '@/components/layout';
+import { Button, Card, CardContent, Loading, Modal, Input, Textarea, SearchInput } from '@/components/ui';
 import { useLeadsStore, useCompanyStore } from '@/lib/store';
 import { Lead, LeadStatus, LeadSource, ContactChannel } from '@/lib/types';
 import { BUSINESS_PRESETS, type ProspectMarker, type GeoPoint } from '@/lib/map-service';
@@ -52,7 +52,7 @@ const CHANNEL_OPTIONS: { value: ContactChannel; label: string }[] = [
   { value: 'other', label: 'Otro' },
 ];
 
-type ViewMode = 'map' | 'list';
+type ViewMode = 'map' | 'list' | 'campaigns';
 
 interface LeadFormData {
   companyName: string;
@@ -83,13 +83,26 @@ const emptyForm: LeadFormData = {
 };
 
 // ==========================================
+// HELPER: Auto-score a lead based on data quality
+// ==========================================
+function computeAutoScore(prospect: ProspectMarker): number {
+  let score = 10; // base
+  if (prospect.email) score += 25;
+  if (prospect.phone) score += 20;
+  if (prospect.website) score += 20;
+  if (prospect.address) score += 10;
+  if (prospect.name) score += 5;
+  return Math.min(score, 100);
+}
+
+// ==========================================
 // MAIN PAGE
 // ==========================================
 
 export default function ProspectingPage() {
   const {
     leads, isLoading, fetchLeads, createLead, updateLead, deleteLead,
-    setSelectedLead, selectedLead, convertToOpportunity,
+    convertToOpportunity,
   } = useLeadsStore();
   const { selectedCompanyId } = useCompanyStore();
 
@@ -117,6 +130,14 @@ export default function ProspectingPage() {
   // Detail panel
   const [detailLead, setDetailLead] = useState<Lead | null>(null);
 
+  // Bulk selection
+  const [selectedLeadIds, setSelectedLeadIds] = useState<Set<string>>(new Set());
+  const [isEmailModalOpen, setIsEmailModalOpen] = useState(false);
+  const [emailSubject, setEmailSubject] = useState('');
+  const [emailBody, setEmailBody] = useState('');
+  const [isSendingEmails, setIsSendingEmails] = useState(false);
+  const [emailSendResult, setEmailSendResult] = useState<{ sent: number; failed: number; noEmail: number } | null>(null);
+
   useEffect(() => {
     if (selectedCompanyId) fetchLeads();
   }, [selectedCompanyId, fetchLeads]);
@@ -141,7 +162,6 @@ export default function ProspectingPage() {
   const handleSearch = useCallback(async () => {
     setIsSearching(true);
     try {
-      // Use the server-side proxy to avoid CORS
       const body: Record<string, unknown> = {
         action: 'search',
         center: mapCenter,
@@ -151,11 +171,9 @@ export default function ProspectingPage() {
       if (selectedPreset && BUSINESS_PRESETS[selectedPreset]) {
         body.tags = BUSINESS_PRESETS[selectedPreset].tags;
       } else if (searchQuery.trim()) {
-        // Use AI-powered search
         body.action = 'ai-search';
         body.query = searchQuery.trim();
       } else {
-        // Default: search all businesses
         body.tags = { shop: '*' };
       }
 
@@ -180,7 +198,6 @@ export default function ProspectingPage() {
     }
   }, [mapCenter, searchRadius, selectedPreset, searchQuery]);
 
-  // Geocode a location search
   const handleLocationSearch = useCallback(async (query: string) => {
     if (!query.trim()) return;
     try {
@@ -203,6 +220,7 @@ export default function ProspectingPage() {
   // ==========================================
 
   const handleSaveFromProspect = useCallback(async (prospect: ProspectMarker) => {
+    const autoScore = computeAutoScore(prospect);
     const newLead = await createLead({
       companyName: prospect.name,
       businessType: prospect.businessType,
@@ -214,6 +232,7 @@ export default function ProspectingPage() {
       website: prospect.website,
       source: 'map' as LeadSource,
       status: 'not_contacted' as LeadStatus,
+      prospectScore: autoScore,
       osmId: prospect.osmId,
       osmTags: prospect.tags,
     });
@@ -295,8 +314,17 @@ export default function ProspectingPage() {
   }, [convertToOpportunity]);
 
   // ==========================================
-  // FILTERED DATA
+  // BULK EMAIL
   // ==========================================
+
+  const toggleLeadSelection = useCallback((leadId: string) => {
+    setSelectedLeadIds(prev => {
+      const next = new Set(prev);
+      if (next.has(leadId)) next.delete(leadId);
+      else next.add(leadId);
+      return next;
+    });
+  }, []);
 
   const filteredLeads = useMemo(() => {
     return leads.filter(l => {
@@ -308,12 +336,96 @@ export default function ProspectingPage() {
           l.companyName?.toLowerCase().includes(q) ||
           l.contactName?.toLowerCase().includes(q) ||
           l.businessType?.toLowerCase().includes(q) ||
-          l.address?.toLowerCase().includes(q)
+          l.address?.toLowerCase().includes(q) ||
+          l.contactEmail?.toLowerCase().includes(q) ||
+          l.contactPhone?.toLowerCase().includes(q)
         );
       }
       return true;
     });
   }, [leads, filterStatus, filterSource, searchTerm]);
+
+  const toggleSelectAll = useCallback(() => {
+    setSelectedLeadIds(prev => {
+      if (prev.size === filteredLeads.length && filteredLeads.length > 0) return new Set();
+      return new Set(filteredLeads.map(l => l.id));
+    });
+  }, [filteredLeads]);
+
+  const selectedLeadsWithEmail = useMemo(() => {
+    return leads.filter(l => selectedLeadIds.has(l.id) && l.contactEmail);
+  }, [leads, selectedLeadIds]);
+
+  const handleOpenBulkEmail = useCallback(() => {
+    setEmailSubject('');
+    setEmailBody('');
+    setEmailSendResult(null);
+    setIsEmailModalOpen(true);
+  }, []);
+
+  const handleSendBulkEmails = useCallback(async () => {
+    if (!emailSubject.trim() || !emailBody.trim()) return;
+    setIsSendingEmails(true);
+    setEmailSendResult(null);
+
+    const leadsToEmail = leads.filter(l => selectedLeadIds.has(l.id));
+    const withEmail = leadsToEmail.filter(l => l.contactEmail);
+    const noEmail = leadsToEmail.length - withEmail.length;
+    let sent = 0;
+    let failed = 0;
+
+    try {
+      const res = await fetch('/api/email/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          recipients: withEmail.map(l => ({
+            email: l.contactEmail,
+            name: l.contactName || l.companyName,
+            companyName: l.companyName,
+          })),
+          subject: emailSubject,
+          body: emailBody,
+        }),
+      });
+
+      const data = await res.json();
+      sent = data.sent || 0;
+      failed = data.failed || 0;
+
+      // Update all emailed leads to "contacted" status
+      for (const lead of withEmail) {
+        if (lead.status === 'not_contacted') {
+          await updateLead(lead.id, { status: 'contacted', channel: 'email' });
+        }
+      }
+    } catch (err) {
+      console.error('Bulk email error:', err);
+      failed = withEmail.length;
+    }
+
+    setEmailSendResult({ sent, failed, noEmail });
+    setIsSendingEmails(false);
+  }, [emailSubject, emailBody, leads, selectedLeadIds, updateLead]);
+
+  const handleBulkConvertToOpportunity = useCallback(async () => {
+    const contactedLeads = leads.filter(l =>
+      selectedLeadIds.has(l.id) &&
+      (l.status === 'contacted' || l.status === 'responded') &&
+      !l.convertedToOpportunityId
+    );
+
+    setIsConverting(true);
+    for (const lead of contactedLeads) {
+      await convertToOpportunity(lead.id);
+    }
+    setIsConverting(false);
+    setSelectedLeadIds(new Set());
+  }, [leads, selectedLeadIds, convertToOpportunity]);
+
+  // ==========================================
+  // COMPUTED DATA
+  // ==========================================
 
   const leadsWithCoords = useMemo(
     () => leads.filter(l => l.lat != null && l.lng != null),
@@ -325,7 +437,9 @@ export default function ProspectingPage() {
     const byStatus: Record<string, number> = {};
     leads.forEach(l => { byStatus[l.status] = (byStatus[l.status] || 0) + 1; });
     const avgScore = total > 0 ? Math.round(leads.reduce((a, l) => a + l.prospectScore, 0) / total) : 0;
-    return { total, byStatus, avgScore };
+    const withEmail = leads.filter(l => l.contactEmail).length;
+    const withPhone = leads.filter(l => l.contactPhone).length;
+    return { total, byStatus, avgScore, withEmail, withPhone };
   }, [leads]);
 
   // ==========================================
@@ -340,7 +454,7 @@ export default function ProspectingPage() {
           <div className="flex items-center justify-between mb-4">
             <div>
               <h1 className="text-2xl font-bold text-gray-900">Prospección</h1>
-              <p className="text-sm text-gray-500 mt-1">Encuentra y gestiona leads desde el mapa</p>
+              <p className="text-sm text-gray-500 mt-1">Encuentra, gestiona y contacta leads desde el mapa</p>
             </div>
             <div className="flex items-center gap-3">
               {/* View toggle */}
@@ -373,13 +487,27 @@ export default function ProspectingPage() {
                     Lista
                   </span>
                 </button>
+                <button
+                  onClick={() => setViewMode('campaigns')}
+                  className={cn(
+                    'px-3 py-1.5 text-sm font-medium rounded-md transition-colors',
+                    viewMode === 'campaigns' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                  )}
+                >
+                  <span className="flex items-center gap-1.5">
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                    </svg>
+                    Campañas
+                  </span>
+                </button>
               </div>
               <Button onClick={() => openCreateModal()}>+ Nuevo Lead</Button>
             </div>
           </div>
 
           {/* Stats strip */}
-          <div className="grid grid-cols-5 gap-3">
+          <div className="grid grid-cols-7 gap-3">
             <div className="bg-white border rounded-lg px-3 py-2">
               <div className="text-xs text-gray-500">Total Leads</div>
               <div className="text-lg font-bold text-gray-900">{stats.total}</div>
@@ -395,6 +523,14 @@ export default function ProspectingPage() {
             <div className="bg-white border rounded-lg px-3 py-2">
               <div className="text-xs text-gray-500">Respondieron</div>
               <div className="text-lg font-bold text-green-600">{stats.byStatus['responded'] || 0}</div>
+            </div>
+            <div className="bg-white border rounded-lg px-3 py-2">
+              <div className="text-xs text-gray-500">Con email</div>
+              <div className="text-lg font-bold text-indigo-600">{stats.withEmail}</div>
+            </div>
+            <div className="bg-white border rounded-lg px-3 py-2">
+              <div className="text-xs text-gray-500">Con teléfono</div>
+              <div className="text-lg font-bold text-teal-600">{stats.withPhone}</div>
             </div>
             <div className="bg-white border rounded-lg px-3 py-2">
               <div className="text-xs text-gray-500">Score promedio</div>
@@ -480,11 +616,7 @@ export default function ProspectingPage() {
                       />
                     </div>
 
-                    <Button
-                      onClick={handleSearch}
-                      disabled={isSearching}
-                      className="w-full"
-                    >
+                    <Button onClick={handleSearch} disabled={isSearching} className="w-full">
                       {isSearching ? (
                         <span className="flex items-center gap-2">
                           <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
@@ -505,6 +637,27 @@ export default function ProspectingPage() {
                   </CardContent>
                 </Card>
 
+                {/* Map legend */}
+                <Card>
+                  <CardContent className="p-3">
+                    <div className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">Leyenda del mapa</div>
+                    <div className="space-y-1 text-xs">
+                      <div className="flex items-center gap-2">
+                        <span className="w-3 h-3 rounded-full bg-yellow-500 border border-yellow-600"></span>
+                        <span className="text-gray-600">Con sitio web</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="w-3 h-3 rounded-full bg-green-500 border border-green-600"></span>
+                        <span className="text-gray-600">Sin sitio web</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="w-3 h-3 rounded-full bg-blue-500 border border-blue-600"></span>
+                        <span className="text-gray-600">Guardado como lead</span>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
                 {/* Search results */}
                 {prospectResults.length > 0 && (
                   <Card>
@@ -513,10 +666,7 @@ export default function ProspectingPage() {
                         <span className="text-sm font-medium text-gray-700">
                           Resultados ({prospectResults.length})
                         </span>
-                        <button
-                          onClick={() => setProspectResults([])}
-                          className="text-xs text-gray-400 hover:text-gray-600"
-                        >
+                        <button onClick={() => setProspectResults([])} className="text-xs text-gray-400 hover:text-gray-600">
                           Limpiar
                         </button>
                       </div>
@@ -534,15 +684,32 @@ export default function ProspectingPage() {
                                   : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
                               )}
                             >
-                              <div className="font-medium text-gray-900 truncate">{p.name}</div>
-                              <div className="text-xs text-gray-500 truncate">{p.businessType}</div>
-                              {p.address && (
-                                <div className="text-xs text-gray-400 truncate mt-0.5">{p.address}</div>
-                              )}
+                              <div className="flex items-center gap-1.5">
+                                <span className={cn('w-2 h-2 rounded-full flex-shrink-0', p.website ? 'bg-yellow-500' : 'bg-green-500')} />
+                                <span className="font-medium text-gray-900 truncate">{p.name}</span>
+                              </div>
+                              <div className="text-xs text-gray-500 truncate mt-0.5">{p.businessType}</div>
+                              {p.address && <div className="text-xs text-gray-400 truncate mt-0.5">{p.address}</div>}
+                              {/* Contact info inline */}
+                              <div className="flex items-center gap-3 mt-1 text-xs">
+                                {p.phone && <span className="text-gray-500">📞 {p.phone}</span>}
+                                {p.email && <span className="text-gray-500">✉️</span>}
+                                {p.website && <span className="text-yellow-600">🌐</span>}
+                              </div>
                               <div className="flex items-center justify-between mt-1.5">
-                                {p.distance != null && (
-                                  <span className="text-xs text-gray-400">{p.distance.toFixed(1)} km</span>
-                                )}
+                                <div className="flex items-center gap-2">
+                                  {p.distance != null && <span className="text-xs text-gray-400">{p.distance.toFixed(1)} km</span>}
+                                  <a
+                                    href={`https://www.google.com/search?q=${encodeURIComponent(p.name + (p.address ? ' ' + p.address : ''))}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="text-xs text-gray-400 hover:text-blue-600"
+                                    title="Buscar en Google"
+                                  >
+                                    🔍
+                                  </a>
+                                </div>
                                 {alreadySaved ? (
                                   <span className="text-xs text-green-600 font-medium">✓ Guardado</span>
                                 ) : (
@@ -569,22 +736,51 @@ export default function ProspectingPage() {
                       <div className="text-sm font-medium text-gray-700 mb-2">
                         Mis leads ({leadsWithCoords.length})
                       </div>
-                      <div className="space-y-1.5 max-h-[200px] overflow-y-auto">
+                      <div className="space-y-1 max-h-[250px] overflow-y-auto">
                         {leadsWithCoords.map((l) => (
                           <div
                             key={l.id}
                             onClick={() => setDetailLead(l)}
-                            className="flex items-center gap-2 p-1.5 rounded cursor-pointer hover:bg-gray-50 text-sm"
+                            className={cn(
+                              'p-2 rounded-lg cursor-pointer hover:bg-gray-50 text-sm border border-transparent transition-colors',
+                              detailLead?.id === l.id ? 'bg-blue-50 border-blue-200' : ''
+                            )}
                           >
-                            <span className={cn(
-                              'w-2 h-2 rounded-full flex-shrink-0',
-                              l.status === 'not_contacted' && 'bg-gray-400',
-                              l.status === 'contacted' && 'bg-blue-400',
-                              l.status === 'waiting_response' && 'bg-yellow-400',
-                              l.status === 'responded' && 'bg-green-400',
-                              l.status === 'not_interested' && 'bg-red-400',
-                            )} />
-                            <span className="truncate text-gray-700">{l.companyName}</span>
+                            <div className="flex items-center gap-2">
+                              <span className={cn(
+                                'w-2 h-2 rounded-full flex-shrink-0',
+                                l.status === 'not_contacted' && 'bg-gray-400',
+                                l.status === 'contacted' && 'bg-blue-400',
+                                l.status === 'waiting_response' && 'bg-yellow-400',
+                                l.status === 'responded' && 'bg-green-400',
+                                l.status === 'not_interested' && 'bg-red-400',
+                              )} />
+                              <span className="truncate text-gray-700 font-medium">{l.companyName}</span>
+                            </div>
+                            <div className="flex items-center gap-2 mt-1 ml-4 text-xs">
+                              {l.contactPhone ? (
+                                <a href={`tel:${l.contactPhone}`} onClick={(e) => e.stopPropagation()} className="text-gray-500 hover:text-blue-600" title={l.contactPhone}>📞</a>
+                              ) : (
+                                <span className="text-gray-300" title="Sin teléfono">📞</span>
+                              )}
+                              {l.contactEmail ? (
+                                <a href={`mailto:${l.contactEmail}`} onClick={(e) => e.stopPropagation()} className="text-gray-500 hover:text-blue-600" title={l.contactEmail}>✉️</a>
+                              ) : (
+                                <span className="text-gray-300" title="Sin email">✉️</span>
+                              )}
+                              {l.website ? (
+                                <a href={l.website.startsWith('http') ? l.website : `https://${l.website}`} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="text-yellow-600 hover:text-yellow-700" title={l.website}>🌐</a>
+                              ) : (
+                                <span className="text-gray-300" title="Sin web">🌐</span>
+                              )}
+                              <span className={cn('text-xs ml-auto',
+                                l.prospectScore < 30 && 'text-red-500',
+                                l.prospectScore >= 30 && l.prospectScore < 60 && 'text-yellow-500',
+                                l.prospectScore >= 60 && 'text-green-500',
+                              )}>
+                                {l.prospectScore}pts
+                              </span>
+                            </div>
                           </div>
                         ))}
                       </div>
@@ -621,10 +817,7 @@ export default function ProspectingPage() {
                             <p className="text-xs text-gray-500 mt-0.5">{detailLead.businessType}</p>
                           )}
                         </div>
-                        <button
-                          onClick={() => setDetailLead(null)}
-                          className="text-gray-400 hover:text-gray-600"
-                        >
+                        <button onClick={() => setDetailLead(null)} className="text-gray-400 hover:text-gray-600">
                           <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                           </svg>
@@ -656,6 +849,33 @@ export default function ProspectingPage() {
                         </div>
                       </div>
 
+                      {/* Data completeness */}
+                      <div>
+                        <div className="text-xs text-gray-500 mb-1">Datos del lead</div>
+                        <div className="grid grid-cols-4 gap-1">
+                          <div className={cn('text-center p-1 rounded text-xs',
+                            detailLead.contactEmail ? 'bg-green-100 text-green-700' : 'bg-red-50 text-red-400'
+                          )}>
+                            {detailLead.contactEmail ? '✓' : '✗'} Email
+                          </div>
+                          <div className={cn('text-center p-1 rounded text-xs',
+                            detailLead.contactPhone ? 'bg-green-100 text-green-700' : 'bg-red-50 text-red-400'
+                          )}>
+                            {detailLead.contactPhone ? '✓' : '✗'} Tel.
+                          </div>
+                          <div className={cn('text-center p-1 rounded text-xs',
+                            detailLead.website ? 'bg-green-100 text-green-700' : 'bg-red-50 text-red-400'
+                          )}>
+                            {detailLead.website ? '✓' : '✗'} Web
+                          </div>
+                          <div className={cn('text-center p-1 rounded text-xs',
+                            detailLead.contactName ? 'bg-green-100 text-green-700' : 'bg-red-50 text-red-400'
+                          )}>
+                            {detailLead.contactName ? '✓' : '✗'} Nombre
+                          </div>
+                        </div>
+                      </div>
+
                       {/* Contact info */}
                       <div className="space-y-2">
                         <div className="text-xs font-medium text-gray-500 uppercase tracking-wider">Contacto</div>
@@ -667,15 +887,22 @@ export default function ProspectingPage() {
                             {detailLead.contactName}
                           </div>
                         )}
-                        {detailLead.contactEmail && (
+                        {detailLead.contactEmail ? (
                           <a href={`mailto:${detailLead.contactEmail}`} className="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-800">
                             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                             </svg>
                             {detailLead.contactEmail}
                           </a>
+                        ) : (
+                          <div className="flex items-center gap-2 text-sm text-amber-600">
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                            </svg>
+                            Sin email — buscá en Google
+                          </div>
                         )}
-                        {detailLead.contactPhone && (
+                        {detailLead.contactPhone ? (
                           <div className="flex items-center gap-2 text-sm">
                             <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
@@ -694,14 +921,28 @@ export default function ProspectingPage() {
                               </svg>
                             </a>
                           </div>
+                        ) : (
+                          <div className="flex items-center gap-2 text-sm text-amber-600">
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                            </svg>
+                            Sin teléfono
+                          </div>
                         )}
-                        {detailLead.website && (
+                        {detailLead.website ? (
                           <a href={detailLead.website.startsWith('http') ? detailLead.website : `https://${detailLead.website}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-800">
                             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
                             </svg>
                             {detailLead.website}
                           </a>
+                        ) : (
+                          <div className="flex items-center gap-2 text-sm text-amber-600">
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
+                            </svg>
+                            Sin web
+                          </div>
                         )}
                         {detailLead.address && (
                           <div className="flex items-start gap-2 text-sm text-gray-600">
@@ -712,6 +953,39 @@ export default function ProspectingPage() {
                             {detailLead.address}
                           </div>
                         )}
+                      </div>
+
+                      {/* Google search buttons */}
+                      <div className="space-y-2">
+                        <div className="text-xs font-medium text-gray-500 uppercase tracking-wider">Buscar info</div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <a
+                            href={`https://www.google.com/search?q=${encodeURIComponent(detailLead.companyName + (detailLead.address ? ' ' + detailLead.address : ''))}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors border border-gray-200"
+                          >
+                            🔍 Buscar en Google
+                          </a>
+                          <a
+                            href={`https://www.google.com/maps/search/${encodeURIComponent(detailLead.companyName + (detailLead.address ? ', ' + detailLead.address : ''))}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors border border-gray-200"
+                          >
+                            📍 Google Maps
+                          </a>
+                          {detailLead.website && (
+                            <a
+                              href={detailLead.website.startsWith('http') ? detailLead.website : `https://${detailLead.website}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors border border-blue-200 col-span-2"
+                            >
+                              🌐 Visitar sitio web
+                            </a>
+                          )}
+                        </div>
                       </div>
 
                       {/* Notes */}
@@ -732,11 +1006,7 @@ export default function ProspectingPage() {
                       {/* Actions */}
                       <div className="space-y-2 pt-2 border-t">
                         <div className="grid grid-cols-2 gap-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => openEditModal(detailLead)}
-                          >
+                          <Button variant="outline" size="sm" onClick={() => openEditModal(detailLead)}>
                             Editar
                           </Button>
                           <select
@@ -752,7 +1022,9 @@ export default function ProspectingPage() {
                             ))}
                           </select>
                         </div>
-                        {!detailLead.convertedToOpportunityId && detailLead.status === 'responded' && (
+
+                        {/* Convert — available for contacted / waiting / responded leads */}
+                        {!detailLead.convertedToOpportunityId && ['contacted', 'waiting_response', 'responded'].includes(detailLead.status) && (
                           <Button
                             onClick={() => handleConvert(detailLead.id)}
                             disabled={isConverting}
@@ -766,18 +1038,32 @@ export default function ProspectingPage() {
                             ✓ Convertido a oportunidad
                           </div>
                         )}
+
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="w-full text-red-600 hover:text-red-700 hover:bg-red-50"
+                          onClick={() => {
+                            if (confirm('¿Eliminar este lead?')) {
+                              deleteLead(detailLead.id);
+                              setDetailLead(null);
+                            }
+                          }}
+                        >
+                          Eliminar lead
+                        </Button>
                       </div>
                     </CardContent>
                   </Card>
                 </div>
               )}
             </div>
-          ) : (
+          ) : viewMode === 'list' ? (
             /* LIST VIEW */
             <div className="space-y-4">
               {/* Filters */}
-              <div className="flex items-center gap-3">
-                <div className="flex-1">
+              <div className="flex items-center gap-3 flex-wrap">
+                <div className="flex-1 min-w-[200px]">
                   <SearchInput
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
@@ -806,6 +1092,47 @@ export default function ProspectingPage() {
                 </select>
               </div>
 
+              {/* Bulk action bar */}
+              {selectedLeadIds.size > 0 && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 flex items-center justify-between">
+                  <span className="text-sm font-medium text-blue-800">
+                    {selectedLeadIds.size} lead{selectedLeadIds.size > 1 ? 's' : ''} seleccionado{selectedLeadIds.size > 1 ? 's' : ''}
+                    {selectedLeadsWithEmail.length > 0 && (
+                      <span className="text-blue-600 ml-1">
+                        ({selectedLeadsWithEmail.length} con email)
+                      </span>
+                    )}
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      size="sm"
+                      onClick={handleOpenBulkEmail}
+                      disabled={selectedLeadsWithEmail.length === 0}
+                      className="bg-indigo-600 hover:bg-indigo-700"
+                    >
+                      <span className="flex items-center gap-1.5">
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                        </svg>
+                        Enviar email masivo
+                      </span>
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={handleBulkConvertToOpportunity}
+                      disabled={isConverting}
+                      className="text-green-700 border-green-300 hover:bg-green-50"
+                    >
+                      {isConverting ? 'Convirtiendo...' : '→ Convertir a Oportunidades'}
+                    </Button>
+                    <button onClick={() => setSelectedLeadIds(new Set())} className="text-xs text-gray-500 hover:text-gray-700 ml-2">
+                      Deseleccionar
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* Table */}
               {isLoading ? (
                 <Loading />
@@ -822,29 +1149,84 @@ export default function ProspectingPage() {
                   <table className="w-full">
                     <thead>
                       <tr className="bg-gray-50 border-b text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        <th className="text-left px-4 py-3">Empresa</th>
-                        <th className="text-left px-4 py-3">Contacto</th>
-                        <th className="text-left px-4 py-3">Estado</th>
-                        <th className="text-left px-4 py-3">Fuente</th>
-                        <th className="text-center px-4 py-3">Score</th>
-                        <th className="text-left px-4 py-3">Fecha</th>
-                        <th className="text-right px-4 py-3">Acciones</th>
+                        <th className="text-left px-3 py-3 w-10">
+                          <input
+                            type="checkbox"
+                            checked={selectedLeadIds.size === filteredLeads.length && filteredLeads.length > 0}
+                            onChange={toggleSelectAll}
+                            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          />
+                        </th>
+                        <th className="text-left px-3 py-3">Empresa</th>
+                        <th className="text-left px-3 py-3">Contacto</th>
+                        <th className="text-left px-3 py-3">Email / Tel.</th>
+                        <th className="text-left px-3 py-3">Web</th>
+                        <th className="text-left px-3 py-3">Estado</th>
+                        <th className="text-center px-3 py-3">Score</th>
+                        <th className="text-right px-3 py-3">Acciones</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y">
                       {filteredLeads.map((lead) => (
-                        <tr key={lead.id} className="hover:bg-gray-50 transition-colors">
-                          <td className="px-4 py-3">
+                        <tr key={lead.id} className={cn(
+                          'hover:bg-gray-50 transition-colors',
+                          selectedLeadIds.has(lead.id) && 'bg-blue-50'
+                        )}>
+                          <td className="px-3 py-3">
+                            <input
+                              type="checkbox"
+                              checked={selectedLeadIds.has(lead.id)}
+                              onChange={() => toggleLeadSelection(lead.id)}
+                              className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                            />
+                          </td>
+                          <td className="px-3 py-3">
                             <div className="font-medium text-gray-900 text-sm">{lead.companyName}</div>
-                            {lead.businessType && (
-                              <div className="text-xs text-gray-500">{lead.businessType}</div>
+                            {lead.businessType && <div className="text-xs text-gray-500">{lead.businessType}</div>}
+                          </td>
+                          <td className="px-3 py-3">
+                            <div className="text-sm text-gray-700">{lead.contactName || '—'}</div>
+                          </td>
+                          <td className="px-3 py-3">
+                            <div className="space-y-0.5">
+                              {lead.contactEmail ? (
+                                <a href={`mailto:${lead.contactEmail}`} className="text-xs text-blue-600 hover:text-blue-800 block truncate max-w-[180px]">{lead.contactEmail}</a>
+                              ) : (
+                                <span className="text-xs text-amber-500">Sin email</span>
+                              )}
+                              {lead.contactPhone ? (
+                                <div className="flex items-center gap-1">
+                                  <span className="text-xs text-gray-600">{lead.contactPhone}</span>
+                                  <a href={`https://wa.me/${lead.contactPhone.replace(/[^\d+]/g, '').replace(/^\+/, '')}`} target="_blank" rel="noopener noreferrer" className="text-green-600 hover:text-green-700" title="WhatsApp">
+                                    <svg className="w-3 h-3" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/></svg>
+                                  </a>
+                                </div>
+                              ) : (
+                                <span className="text-xs text-amber-500">Sin teléfono</span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="px-3 py-3">
+                            {lead.website ? (
+                              <a href={lead.website.startsWith('http') ? lead.website : `https://${lead.website}`} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:text-blue-800 truncate max-w-[120px] block">
+                                🌐 {lead.website.replace(/^https?:\/\//, '').replace(/\/$/, '')}
+                              </a>
+                            ) : (
+                              <div className="flex items-center gap-1">
+                                <span className="text-xs text-gray-400">—</span>
+                                <a
+                                  href={`https://www.google.com/search?q=${encodeURIComponent(lead.companyName + ' sitio web')}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-xs text-gray-400 hover:text-blue-600"
+                                  title="Buscar web en Google"
+                                >
+                                  🔍
+                                </a>
+                              </div>
                             )}
                           </td>
-                          <td className="px-4 py-3">
-                            <div className="text-sm text-gray-700">{lead.contactName || '—'}</div>
-                            <div className="text-xs text-gray-500">{lead.contactEmail || lead.contactPhone || ''}</div>
-                          </td>
-                          <td className="px-4 py-3">
+                          <td className="px-3 py-3">
                             <span className={cn(
                               'inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium',
                               LEAD_STATUS_LABELS[lead.status].bg,
@@ -853,10 +1235,7 @@ export default function ProspectingPage() {
                               {LEAD_STATUS_LABELS[lead.status].label}
                             </span>
                           </td>
-                          <td className="px-4 py-3">
-                            <span className="text-xs text-gray-600">{LEAD_SOURCE_LABELS[lead.source]}</span>
-                          </td>
-                          <td className="px-4 py-3 text-center">
+                          <td className="px-3 py-3 text-center">
                             <span className={cn('text-sm font-medium',
                               lead.prospectScore < 30 && 'text-red-600',
                               lead.prospectScore >= 30 && lead.prospectScore < 60 && 'text-yellow-600',
@@ -865,11 +1244,31 @@ export default function ProspectingPage() {
                               {lead.prospectScore}
                             </span>
                           </td>
-                          <td className="px-4 py-3 text-xs text-gray-500">
-                            {formatDate(lead.createdAt)}
-                          </td>
-                          <td className="px-4 py-3 text-right">
+                          <td className="px-3 py-3 text-right">
                             <div className="flex items-center justify-end gap-1">
+                              <a
+                                href={`https://www.google.com/search?q=${encodeURIComponent(lead.companyName + (lead.address ? ' ' + lead.address : ''))}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="p-1 text-gray-400 hover:text-blue-600 rounded"
+                                title="Buscar en Google"
+                              >
+                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                                </svg>
+                              </a>
+                              <a
+                                href={`https://www.google.com/maps/search/${encodeURIComponent(lead.companyName + (lead.address ? ', ' + lead.address : ''))}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="p-1 text-gray-400 hover:text-green-600 rounded"
+                                title="Ver en Google Maps"
+                              >
+                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                                </svg>
+                              </a>
                               <button
                                 onClick={() => openEditModal(lead)}
                                 className="p-1 text-gray-400 hover:text-blue-600 rounded"
@@ -896,6 +1295,170 @@ export default function ProspectingPage() {
                   </table>
                 </div>
               )}
+            </div>
+          ) : (
+            /* CAMPAIGNS VIEW */
+            <div className="space-y-6">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">Campañas de Email</h2>
+                <p className="text-sm text-gray-500">Selecciona leads y envía emails masivos para convertirlos en oportunidades</p>
+              </div>
+
+              {/* Campaign workflow */}
+              <div className="grid grid-cols-4 gap-4">
+                <Card>
+                  <CardContent className="p-4 text-center">
+                    <div className="text-3xl mb-2">1️⃣</div>
+                    <div className="text-sm font-medium text-gray-900">Prospectar</div>
+                    <div className="text-xs text-gray-500 mt-1">Busca negocios en el mapa y guárdalos como leads</div>
+                    <Button size="sm" variant="outline" className="mt-3" onClick={() => setViewMode('map')}>Ir al mapa</Button>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="p-4 text-center">
+                    <div className="text-3xl mb-2">2️⃣</div>
+                    <div className="text-sm font-medium text-gray-900">Seleccionar</div>
+                    <div className="text-xs text-gray-500 mt-1">Ve a la lista, selecciona los leads que quieras contactar</div>
+                    <Button size="sm" variant="outline" className="mt-3" onClick={() => setViewMode('list')}>Ir a lista</Button>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="p-4 text-center">
+                    <div className="text-3xl mb-2">3️⃣</div>
+                    <div className="text-sm font-medium text-gray-900">Enviar email</div>
+                    <div className="text-xs text-gray-500 mt-1">Envía un email masivo a los seleccionados con Resend</div>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="p-4 text-center">
+                    <div className="text-3xl mb-2">4️⃣</div>
+                    <div className="text-sm font-medium text-gray-900">Convertir</div>
+                    <div className="text-xs text-gray-500 mt-1">Los leads contactados se convierten en oportunidades</div>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Quick stats */}
+              <div className="grid grid-cols-3 gap-4">
+                <Card>
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="text-sm text-gray-500">Leads sin contactar con email</div>
+                        <div className="text-2xl font-bold text-indigo-600 mt-1">
+                          {leads.filter(l => l.status === 'not_contacted' && l.contactEmail).length}
+                        </div>
+                      </div>
+                      <div className="w-10 h-10 rounded-lg bg-indigo-100 flex items-center justify-center text-indigo-600">
+                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                        </svg>
+                      </div>
+                    </div>
+                    <Button
+                      size="sm"
+                      className="mt-3 w-full bg-indigo-600 hover:bg-indigo-700"
+                      onClick={() => {
+                        const notContactedWithEmail = leads.filter(l => l.status === 'not_contacted' && l.contactEmail);
+                        setSelectedLeadIds(new Set(notContactedWithEmail.map(l => l.id)));
+                        setViewMode('list');
+                      }}
+                    >
+                      Seleccionar todos y enviar
+                    </Button>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="text-sm text-gray-500">Sin email (investigar)</div>
+                        <div className="text-2xl font-bold text-amber-600 mt-1">
+                          {leads.filter(l => !l.contactEmail).length}
+                        </div>
+                      </div>
+                      <div className="w-10 h-10 rounded-lg bg-amber-100 flex items-center justify-center text-amber-600">
+                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                        </svg>
+                      </div>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-3">Buscá su info en Google o sitio web para agregar el email</p>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="text-sm text-gray-500">Listos para convertir</div>
+                        <div className="text-2xl font-bold text-green-600 mt-1">
+                          {leads.filter(l => (l.status === 'contacted' || l.status === 'responded') && !l.convertedToOpportunityId).length}
+                        </div>
+                      </div>
+                      <div className="w-10 h-10 rounded-lg bg-green-100 flex items-center justify-center text-green-600">
+                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                        </svg>
+                      </div>
+                    </div>
+                    <Button
+                      size="sm"
+                      className="mt-3 w-full bg-green-600 hover:bg-green-700"
+                      onClick={() => {
+                        const contactedLeads = leads.filter(l => (l.status === 'contacted' || l.status === 'responded') && !l.convertedToOpportunityId);
+                        setSelectedLeadIds(new Set(contactedLeads.map(l => l.id)));
+                        setViewMode('list');
+                      }}
+                    >
+                      Seleccionar y convertir
+                    </Button>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Email templates */}
+              <Card>
+                <CardContent className="p-4">
+                  <h3 className="text-sm font-medium text-gray-900 mb-3">Plantillas de email rápidas</h3>
+                  <div className="grid grid-cols-3 gap-3">
+                    <button
+                      onClick={() => {
+                        setEmailSubject('Presentación de nuestros servicios');
+                        setEmailBody('Hola {{nombre}},\n\nSomos {{mi_empresa}} y nos gustaría presentarte nuestros servicios que pueden ser de gran utilidad para {{empresa}}.\n\n¿Tendrías unos minutos esta semana para una breve llamada?\n\nSaludos cordiales');
+                        setIsEmailModalOpen(true);
+                      }}
+                      className="p-3 text-left border rounded-lg hover:border-blue-300 hover:bg-blue-50 transition-colors"
+                    >
+                      <div className="text-sm font-medium text-gray-900">📧 Primer contacto</div>
+                      <div className="text-xs text-gray-500 mt-1">Presentación inicial de servicios</div>
+                    </button>
+                    <button
+                      onClick={() => {
+                        setEmailSubject('Seguimiento - {{mi_empresa}}');
+                        setEmailBody('Hola {{nombre}},\n\nTe escribo para hacer seguimiento a mi email anterior. Creo que nuestros servicios podrían beneficiar a {{empresa}}.\n\n¿Te gustaría agendar una reunión breve?\n\nQuedo a disposición.\nSaludos');
+                        setIsEmailModalOpen(true);
+                      }}
+                      className="p-3 text-left border rounded-lg hover:border-blue-300 hover:bg-blue-50 transition-colors"
+                    >
+                      <div className="text-sm font-medium text-gray-900">🔄 Follow-up</div>
+                      <div className="text-xs text-gray-500 mt-1">Seguimiento después de primer contacto</div>
+                    </button>
+                    <button
+                      onClick={() => {
+                        setEmailSubject('Oferta especial para {{empresa}}');
+                        setEmailBody('Hola {{nombre}},\n\nTenemos una oferta especial que pensamos puede interesarte para {{empresa}}.\n\n[Describir oferta aquí]\n\n¿Te gustaría saber más?\n\nSaludos cordiales');
+                        setIsEmailModalOpen(true);
+                      }}
+                      className="p-3 text-left border rounded-lg hover:border-blue-300 hover:bg-blue-50 transition-colors"
+                    >
+                      <div className="text-sm font-medium text-gray-900">🎯 Oferta especial</div>
+                      <div className="text-xs text-gray-500 mt-1">Propuesta con oferta/descuento</div>
+                    </button>
+                  </div>
+                </CardContent>
+              </Card>
             </div>
           )}
         </div>
@@ -1025,6 +1588,114 @@ export default function ProspectingPage() {
               {editingLead ? 'Guardar cambios' : 'Crear lead'}
             </Button>
           </div>
+        </div>
+      </Modal>
+
+      {/* Bulk Email Modal */}
+      <Modal
+        isOpen={isEmailModalOpen}
+        onClose={() => { setIsEmailModalOpen(false); setEmailSendResult(null); }}
+        title="Enviar email masivo"
+        size="lg"
+      >
+        <div className="space-y-4">
+          {emailSendResult ? (
+            <div className="text-center py-6">
+              <div className="text-4xl mb-4">{emailSendResult.sent > 0 ? '✅' : '❌'}</div>
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">Campaña enviada</h3>
+              <div className="space-y-2 text-sm">
+                <div className="text-green-600">✓ {emailSendResult.sent} emails enviados correctamente</div>
+                {emailSendResult.failed > 0 && <div className="text-red-600">✗ {emailSendResult.failed} emails fallaron</div>}
+                {emailSendResult.noEmail > 0 && <div className="text-amber-600">⚠ {emailSendResult.noEmail} leads sin email (omitidos)</div>}
+              </div>
+              <p className="text-xs text-gray-500 mt-4">
+                Los leads contactados cambiaron su estado a &quot;Contactado&quot;.
+                Ahora pueden convertirse en oportunidades.
+              </p>
+              <div className="flex gap-3 justify-center mt-6">
+                <Button variant="outline" onClick={() => { setIsEmailModalOpen(false); setEmailSendResult(null); setSelectedLeadIds(new Set()); }}>
+                  Cerrar
+                </Button>
+                <Button
+                  className="bg-green-600 hover:bg-green-700"
+                  onClick={() => {
+                    setIsEmailModalOpen(false);
+                    setEmailSendResult(null);
+                    handleBulkConvertToOpportunity();
+                  }}
+                >
+                  Convertir a Oportunidades
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="bg-gray-50 border rounded-lg p-3">
+                <div className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">Destinatarios</div>
+                <div className="text-sm text-gray-700">
+                  {selectedLeadsWithEmail.length} lead{selectedLeadsWithEmail.length !== 1 ? 's' : ''} con email
+                  {selectedLeadIds.size - selectedLeadsWithEmail.length > 0 && (
+                    <span className="text-amber-500 ml-2">
+                      ({selectedLeadIds.size - selectedLeadsWithEmail.length} sin email serán omitidos)
+                    </span>
+                  )}
+                </div>
+                <div className="flex flex-wrap gap-1 mt-2 max-h-20 overflow-y-auto">
+                  {selectedLeadsWithEmail.map(l => (
+                    <span key={l.id} className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-blue-100 text-blue-800">
+                      {l.companyName}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              <Input
+                label="Asunto"
+                value={emailSubject}
+                onChange={(e) => setEmailSubject(e.target.value)}
+                placeholder="Asunto del email..."
+              />
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Mensaje
+                  <span className="text-xs text-gray-400 ml-2">
+                    Variables: {'{{nombre}}'} {'{{empresa}}'} {'{{mi_empresa}}'}
+                  </span>
+                </label>
+                <textarea
+                  value={emailBody}
+                  onChange={(e) => setEmailBody(e.target.value)}
+                  rows={8}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
+                  placeholder="Escribe tu email aquí..."
+                />
+              </div>
+
+              <div className="flex justify-end gap-3 pt-2">
+                <Button variant="outline" onClick={() => setIsEmailModalOpen(false)}>
+                  Cancelar
+                </Button>
+                <Button
+                  onClick={handleSendBulkEmails}
+                  disabled={isSendingEmails || !emailSubject.trim() || !emailBody.trim() || selectedLeadsWithEmail.length === 0}
+                  className="bg-indigo-600 hover:bg-indigo-700"
+                >
+                  {isSendingEmails ? (
+                    <span className="flex items-center gap-2">
+                      <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                      </svg>
+                      Enviando...
+                    </span>
+                  ) : (
+                    `Enviar a ${selectedLeadsWithEmail.length} lead${selectedLeadsWithEmail.length !== 1 ? 's' : ''}`
+                  )}
+                </Button>
+              </div>
+            </>
+          )}
         </div>
       </Modal>
     </MainLayout>

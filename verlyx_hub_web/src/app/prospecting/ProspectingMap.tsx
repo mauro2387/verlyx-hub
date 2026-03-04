@@ -32,8 +32,11 @@ function createIcon(color: string, size: [number, number] = [28, 40]) {
 }
 
 const ICONS = {
-  prospect: createIcon('#6366f1'),   // indigo — unvisited prospect
-  saved: createIcon('#22c55e'),       // green — already a lead
+  // Prospect markers: yellow = has website, green = no website
+  prospect_with_web: createIcon('#eab308'),  // yellow — has website
+  prospect_no_web: createIcon('#22c55e'),    // green — no website
+  saved: createIcon('#3b82f6'),               // blue — already saved as lead
+  // Lead markers by status
   lead_not_contacted: createIcon('#9ca3af'), // gray
   lead_contacted: createIcon('#3b82f6'),     // blue
   lead_waiting: createIcon('#eab308'),       // yellow
@@ -41,6 +44,11 @@ const ICONS = {
   lead_not_interested: createIcon('#ef4444'), // red
   selected: createIcon('#f97316', [34, 48]), // orange, bigger
 };
+
+function getProspectIcon(prospect: ProspectMarker, isSaved: boolean) {
+  if (isSaved) return ICONS.saved;
+  return prospect.website ? ICONS.prospect_with_web : ICONS.prospect_no_web;
+}
 
 function getLeadIcon(status: string) {
   switch (status) {
@@ -188,27 +196,40 @@ export default function ProspectingMap({
     prospects.forEach((p) => {
       const isSaved = savedOsmIds.has(p.osmId);
       const isSelected = selectedProspect?.id === p.id;
-      const icon = isSelected ? ICONS.selected : (isSaved ? ICONS.saved : ICONS.prospect);
+      const icon = isSelected ? ICONS.selected : getProspectIcon(p, isSaved);
+      const googleSearchUrl = `https://www.google.com/search?q=${encodeURIComponent(p.name + (p.address ? ' ' + p.address : ''))}`;
+      const googleMapsUrl = `https://www.google.com/maps/search/${encodeURIComponent(p.name + (p.address ? ', ' + p.address : ''))}`;
+      const hasEmail = p.email || (p.tags && p.tags['contact:email']);
+      const displayEmail = p.email || (p.tags && p.tags['contact:email']) || '';
 
       const marker = L.marker([p.lat, p.lng], { icon })
         .bindPopup(() => {
           const div = document.createElement('div');
           div.className = 'text-sm';
           div.innerHTML = `
-            <div style="min-width: 200px;">
-              <div style="font-weight: 600; font-size: 14px; margin-bottom: 4px;">${escapeHtml(p.name)}</div>
+            <div style="min-width: 230px;">
+              <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 4px;">
+                <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: ${p.website ? '#eab308' : '#22c55e'}; flex-shrink: 0;"></span>
+                <span style="font-weight: 600; font-size: 14px;">${escapeHtml(p.name)}</span>
+              </div>
               <div style="color: #6b7280; font-size: 12px; margin-bottom: 4px;">${escapeHtml(p.businessType)}</div>
-              ${p.address ? `<div style="color: #9ca3af; font-size: 12px; margin-bottom: 6px;">${escapeHtml(p.address)}</div>` : ''}
-              ${p.phone ? `<div style="font-size: 12px; margin-bottom: 2px;">📞 ${escapeHtml(p.phone)}</div>` : ''}
-              ${p.website ? `<div style="font-size: 12px; margin-bottom: 2px;">🌐 <a href="${escapeHtml(p.website)}" target="_blank" style="color: #2563eb;">${escapeHtml(p.website)}</a></div>` : ''}
+              ${p.address ? `<div style="color: #9ca3af; font-size: 12px; margin-bottom: 6px;">📍 ${escapeHtml(p.address)}</div>` : ''}
+              ${p.phone ? `<div style="font-size: 12px; margin-bottom: 2px;">📞 <a href="tel:${escapeHtml(p.phone)}" style="color: #1e40af;">${escapeHtml(p.phone)}</a></div>` : '<div style="font-size: 12px; margin-bottom: 2px; color: #d97706;">📞 Sin teléfono</div>'}
+              ${hasEmail ? `<div style="font-size: 12px; margin-bottom: 2px;">✉️ <a href="mailto:${escapeHtml(displayEmail)}" style="color: #2563eb;">${escapeHtml(displayEmail)}</a></div>` : '<div style="font-size: 12px; margin-bottom: 2px; color: #d97706;">✉️ Sin email</div>'}
+              ${p.website ? `<div style="font-size: 12px; margin-bottom: 2px;">🌐 <a href="${escapeHtml(p.website)}" target="_blank" style="color: #2563eb;">${escapeHtml(p.website)}</a></div>` : '<div style="font-size: 12px; margin-bottom: 2px; color: #d97706;">🌐 Sin web</div>'}
               ${p.openingHours ? `<div style="font-size: 12px; margin-bottom: 4px;">🕐 ${escapeHtml(p.openingHours)}</div>` : ''}
               ${p.distance != null ? `<div style="font-size: 11px; color: #9ca3af; margin-bottom: 6px;">${p.distance.toFixed(1)} km</div>` : ''}
-              <div style="margin-top: 8px; display: flex; gap: 8px;">
+              
+              <div style="margin-top: 6px; display: flex; gap: 4px; flex-wrap: wrap;">
+                <a href="${googleSearchUrl}" target="_blank" style="background: #f3f4f6; color: #374151; border: 1px solid #d1d5db; padding: 3px 8px; border-radius: 6px; font-size: 11px; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; gap: 3px;">🔍 Google</a>
+                <a href="${googleMapsUrl}" target="_blank" style="background: #f3f4f6; color: #374151; border: 1px solid #d1d5db; padding: 3px 8px; border-radius: 6px; font-size: 11px; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; gap: 3px;">📍 Maps</a>
+                ${p.phone ? `<a href="https://wa.me/${p.phone.replace(/[^\\d+]/g, '').replace(/^\\+/, '')}" target="_blank" style="background: #dcfce7; color: #166534; border: 1px solid #86efac; padding: 3px 8px; border-radius: 6px; font-size: 11px; cursor: pointer; text-decoration: none;">💬 WhatsApp</a>` : ''}
+              </div>
+              <div style="margin-top: 6px; display: flex; gap: 6px;">
                 ${!isSaved
-                  ? `<button id="save-${p.id}" style="background: #2563eb; color: white; border: none; padding: 4px 12px; border-radius: 6px; font-size: 12px; cursor: pointer;">+ Guardar lead</button>`
+                  ? `<button id="save-${p.id}" style="background: #2563eb; color: white; border: none; padding: 4px 12px; border-radius: 6px; font-size: 12px; cursor: pointer; flex: 1;">+ Guardar lead</button>`
                   : `<span style="color: #16a34a; font-size: 12px; font-weight: 500;">✓ Ya guardado</span>`
                 }
-                ${p.phone ? `<a href="https://wa.me/${p.phone.replace(/[^\\d+]/g, '').replace(/^\\+/, '')}" target="_blank" style="background: #22c55e; color: white; border: none; padding: 4px 12px; border-radius: 6px; font-size: 12px; cursor: pointer; text-decoration: none;">WhatsApp</a>` : ''}
               </div>
             </div>
           `;
@@ -237,14 +258,24 @@ export default function ProspectingMap({
     leads.forEach((l) => {
       if (l.lat == null || l.lng == null) return;
       const icon = getLeadIcon(l.status);
+      const googleSearchUrl = `https://www.google.com/search?q=${encodeURIComponent(l.companyName + (l.address ? ' ' + l.address : ''))}`;
+      const googleMapsUrl = `https://www.google.com/maps/search/${encodeURIComponent(l.companyName + (l.address ? ', ' + l.address : ''))}`;
 
       const marker = L.marker([l.lat, l.lng], { icon })
         .bindPopup(`
-          <div style="min-width: 180px;">
+          <div style="min-width: 220px;">
             <div style="font-weight: 600; font-size: 14px; margin-bottom: 4px;">${escapeHtml(l.companyName)}</div>
             ${l.businessType ? `<div style="color: #6b7280; font-size: 12px; margin-bottom: 4px;">${escapeHtml(l.businessType)}</div>` : ''}
             <div style="font-size: 12px; margin-bottom: 2px;">Estado: <strong>${escapeHtml(getStatusLabel(l.status))}</strong></div>
-            <div style="font-size: 12px;">Score: <strong>${l.prospectScore}</strong></div>
+            <div style="font-size: 12px; margin-bottom: 4px;">Score: <strong>${l.prospectScore}</strong></div>
+            ${l.contactPhone ? `<div style="font-size: 12px; margin-bottom: 2px;">📞 <a href="tel:${escapeHtml(l.contactPhone)}" style="color: #1e40af;">${escapeHtml(l.contactPhone)}</a></div>` : ''}
+            ${l.contactEmail ? `<div style="font-size: 12px; margin-bottom: 2px;">✉️ <a href="mailto:${escapeHtml(l.contactEmail)}" style="color: #2563eb;">${escapeHtml(l.contactEmail)}</a></div>` : ''}
+            ${l.website ? `<div style="font-size: 12px; margin-bottom: 2px;">🌐 <a href="${escapeHtml(l.website.startsWith('http') ? l.website : 'https://' + l.website)}" target="_blank" style="color: #2563eb;">${escapeHtml(l.website)}</a></div>` : ''}
+            <div style="margin-top: 6px; display: flex; gap: 4px; flex-wrap: wrap;">
+              <a href="${googleSearchUrl}" target="_blank" style="background: #f3f4f6; color: #374151; border: 1px solid #d1d5db; padding: 3px 8px; border-radius: 6px; font-size: 11px; cursor: pointer; text-decoration: none;">🔍 Google</a>
+              <a href="${googleMapsUrl}" target="_blank" style="background: #f3f4f6; color: #374151; border: 1px solid #d1d5db; padding: 3px 8px; border-radius: 6px; font-size: 11px; cursor: pointer; text-decoration: none;">📍 Maps</a>
+              ${l.contactPhone ? `<a href="https://wa.me/${l.contactPhone.replace(/[^\\d+]/g, '').replace(/^\\+/, '')}" target="_blank" style="background: #dcfce7; color: #166534; border: 1px solid #86efac; padding: 3px 8px; border-radius: 6px; font-size: 11px; cursor: pointer; text-decoration: none;">💬 WA</a>` : ''}
+            </div>
           </div>
         `);
 

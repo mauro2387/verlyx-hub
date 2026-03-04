@@ -44,6 +44,9 @@ CREATE TRIGGER trigger_audit_leads
   EXECUTE FUNCTION audit_leads_changes();
 
 -- Also fix the convert_lead_to_opportunity function which has the same issue
+-- Must drop first because return type changes from UUID to JSONB
+DROP FUNCTION IF EXISTS convert_lead_to_opportunity(UUID, UUID);
+
 CREATE OR REPLACE FUNCTION convert_lead_to_opportunity(
   p_lead_id UUID,
   p_converted_by UUID DEFAULT NULL
@@ -73,7 +76,7 @@ BEGIN
   
   IF v_client_id IS NULL THEN
     INSERT INTO contacts (
-      my_company_id, name, email, phone, company, type, status, notes
+      my_company_id, first_name, email, phone, company, type, status, notes
     ) VALUES (
       v_lead.my_company_id,
       COALESCE(v_lead.contact_name, v_lead.company_name),
