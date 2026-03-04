@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { MainLayout, PageHeader } from '@/components/layout';
 import { Button, Card, CardContent, SearchInput, Select, EmptyState, Loading, Modal, Input, Textarea, ConfirmDialog, Avatar, Badge, StatCard } from '@/components/ui';
 import { useClientsStore, useProjectsStore, useDealsStore } from '@/lib/store';
@@ -10,10 +11,23 @@ import { clientTypeLabels, cn, generateRandomColor, formatDate, formatCurrency }
 
 type ViewMode = 'grid' | 'table' | 'stats';
 
+/** Check what onboarding items a client is missing */
+function getOnboardingChecklist(client: Client) {
+  const items = [
+    { key: 'email', label: 'Email de contacto', done: !!client.email },
+    { key: 'phone', label: 'Teléfono', done: !!client.phone },
+    { key: 'company', label: 'Empresa', done: !!(client.company || client.companyName) },
+    { key: 'position', label: 'Cargo / Posición', done: !!client.position },
+  ];
+  const completed = items.filter(i => i.done).length;
+  return { items, completed, total: items.length, allDone: completed === items.length };
+}
+
 export default function ClientsPage() {
   const { clients, isLoading, fetchClients, addClient, updateClient, deleteClient, filter, setFilter, getFilteredClients } = useClientsStore();
   const { projects, fetchProjects } = useProjectsStore();
   const { deals, fetchDeals } = useDealsStore();
+  const router = useRouter();
   
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -47,6 +61,11 @@ export default function ClientsPage() {
   const filteredClients = getFilteredClients();
 
   // Client Statistics
+  const pendingOnboarding = useMemo(
+    () => clients.filter(c => c.status === 'won' && c.type === 'client'),
+    [clients]
+  );
+
   const clientStats = {
     total: clients.length,
     active: clients.filter(c => c.status === 'active').length,
@@ -54,6 +73,7 @@ export default function ClientsPage() {
     leads: clients.filter(c => c.type === 'lead').length,
     clients: clients.filter(c => c.type === 'client').length,
     partners: clients.filter(c => c.type === 'partner').length,
+    pending: pendingOnboarding.length,
   };
 
   // Get client metrics
@@ -260,7 +280,7 @@ export default function ClientsPage() {
 
       {/* Statistics Dashboard */}
       {showStats && (
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4 mb-6">
           <StatCard
             title="Total"
             value={clientStats.total}
@@ -268,6 +288,16 @@ export default function ClientsPage() {
             icon={
               <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+              </svg>
+            }
+          />
+          <StatCard
+            title="Pendientes"
+            value={clientStats.pending}
+            color="orange"
+            icon={
+              <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
             }
           />
@@ -322,6 +352,88 @@ export default function ClientsPage() {
             }
           />
         </div>
+      )}
+
+      {/* Pending Onboarding Banner */}
+      {pendingOnboarding.length > 0 && (
+        <Card className="mb-6 border-amber-300 bg-amber-50">
+          <CardContent>
+            <div className="flex items-center gap-3 mb-4">
+              <span className="flex items-center justify-center w-10 h-10 bg-amber-200 rounded-full text-xl">⏳</span>
+              <div>
+                <h3 className="font-semibold text-amber-900">
+                  {pendingOnboarding.length} cliente{pendingOnboarding.length > 1 ? 's' : ''} pendiente{pendingOnboarding.length > 1 ? 's' : ''} de completar
+                </h3>
+                <p className="text-sm text-amber-700">
+                  Oportunidades ganadas que necesitan completar su perfil
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {pendingOnboarding.map(client => {
+                const checklist = getOnboardingChecklist(client);
+                return (
+                  <div
+                    key={client.id}
+                    className="bg-white rounded-lg border border-amber-200 p-4 hover:shadow-md transition-shadow"
+                  >
+                    <div className="flex items-center gap-3 mb-3">
+                      <Avatar name={client.name} size="sm" />
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-gray-900 truncate">{client.name}</p>
+                        <p className="text-xs text-gray-500 truncate">{client.company || 'Sin empresa'}</p>
+                      </div>
+                      <Badge variant="warning">Pendiente</Badge>
+                    </div>
+
+                    {/* Mini checklist */}
+                    <div className="space-y-1.5 mb-3">
+                      {checklist.items.map(item => (
+                        <div key={item.key} className="flex items-center gap-2 text-sm">
+                          {item.done ? (
+                            <svg className="w-4 h-4 text-green-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                            </svg>
+                          ) : (
+                            <svg className="w-4 h-4 text-amber-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <circle cx="12" cy="12" r="9" strokeWidth={2} />
+                            </svg>
+                          )}
+                          <span className={item.done ? 'text-gray-400 line-through' : 'text-gray-700'}>
+                            {item.label}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Progress bar */}
+                    <div className="mb-3">
+                      <div className="flex items-center justify-between text-xs text-gray-500 mb-1">
+                        <span>{checklist.completed}/{checklist.total} completados</span>
+                        <span>{Math.round((checklist.completed / checklist.total) * 100)}%</span>
+                      </div>
+                      <div className="w-full bg-gray-200 rounded-full h-1.5">
+                        <div
+                          className="bg-amber-500 h-1.5 rounded-full transition-all"
+                          style={{ width: `${(checklist.completed / checklist.total) * 100}%` }}
+                        />
+                      </div>
+                    </div>
+
+                    <Button
+                      size="sm"
+                      className="w-full"
+                      onClick={() => router.push(`/clients/${client.id}`)}
+                    >
+                      Completar Perfil
+                    </Button>
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
       )}
 
       {/* Clients Views */}

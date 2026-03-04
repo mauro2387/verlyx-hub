@@ -42,7 +42,7 @@ export default function ClientDetailPage() {
   const router = useRouter();
   const clientId = params.id as string;
 
-  const { clients, fetchClients } = useClientsStore();
+  const { clients, fetchClients, updateClient } = useClientsStore();
   const { activities, isLoading: activitiesLoading, fetchByContact, createActivity, logCall, logEmail, logMeeting, logNote } = useContactActivitiesStore();
   const { getContactScore, recalculateScore } = useLeadScoresStore();
   const { projects, fetchProjects } = useProjectsStore();
@@ -53,6 +53,7 @@ export default function ClientDetailPage() {
   const [leadScore, setLeadScore] = useState<{ totalScore: number; temperature: string; engagementScore?: number; profileScore?: number; financialScore?: number } | null>(null);
   const [activeTab, setActiveTab] = useState<TabType>('overview');
   const [isActivityModalOpen, setIsActivityModalOpen] = useState(false);
+  const [isOnboardingEditOpen, setIsOnboardingEditOpen] = useState(false);
   const [activityType, setActivityType] = useState<'call' | 'email' | 'meeting' | 'note'>('note');
   const [activityForm, setActivityForm] = useState({ subject: '', description: '', followUpDate: '' });
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -141,6 +142,52 @@ export default function ClientDetailPage() {
     }
   };
 
+  // Onboarding checklist
+  const onboardingItems = client ? [
+    { key: 'email', label: 'Email de contacto', done: !!client.email },
+    { key: 'phone', label: 'Teléfono', done: !!client.phone },
+    { key: 'company', label: 'Empresa', done: !!(client.company || client.companyName) },
+    { key: 'position', label: 'Cargo / Posición', done: !!client.position },
+  ] : [];
+  const onboardingCompleted = onboardingItems.filter(i => i.done).length;
+  const isOnboarding = client?.status === 'won' && client?.type === 'client';
+
+  const [onboardingForm, setOnboardingForm] = useState({
+    email: '', phone: '', company: '', position: '', notes: '',
+  });
+
+  // Sync form when edit modal opens
+  const openOnboardingEdit = () => {
+    if (!client) return;
+    setOnboardingForm({
+      email: client.email || '',
+      phone: client.phone || '',
+      company: client.company || client.companyName || '',
+      position: client.position || '',
+      notes: '',
+    });
+    setIsOnboardingEditOpen(true);
+  };
+
+  const handleOnboardingSave = async () => {
+    if (!client) return;
+    const data: Partial<Client> = {};
+    if (onboardingForm.email) data.email = onboardingForm.email;
+    if (onboardingForm.phone) data.phone = onboardingForm.phone;
+    if (onboardingForm.company) { data.company = onboardingForm.company; data.companyName = onboardingForm.company; }
+    if (onboardingForm.position) data.position = onboardingForm.position;
+    if (onboardingForm.notes) data.notes = (client.notes ? client.notes + '\n' : '') + onboardingForm.notes;
+    await updateClient(client.id, data);
+    setIsOnboardingEditOpen(false);
+    await fetchClients();
+  };
+
+  const handleMarkActive = async () => {
+    if (!client) return;
+    await updateClient(client.id, { status: 'active' });
+    await fetchClients();
+  };
+
   if (!client) {
     return (
       <MainLayout>
@@ -171,8 +218,8 @@ export default function ClientDetailPage() {
               {client.company && <p className="text-gray-500">{client.company}</p>}
               {client.position && <p className="text-sm text-gray-400">{client.position}</p>}
               <div className="flex items-center gap-2 mt-2">
-                <Badge variant={client.status === 'active' ? 'success' : 'default'}>
-                  {client.status}
+                <Badge variant={client.status === 'active' ? 'success' : client.status === 'won' ? 'warning' : 'default'}>
+                  {client.status === 'won' ? 'Pendiente onboarding' : client.status}
                 </Badge>
                 <Badge variant="default">
                   {client.type || 'cliente'}
@@ -243,6 +290,87 @@ export default function ClientDetailPage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Onboarding Checklist — shown for recently won clients */}
+      {isOnboarding && (
+        <Card className="mb-6 border-amber-300 bg-gradient-to-r from-amber-50 to-orange-50">
+          <CardContent>
+            <div className="flex items-start justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <span className="flex items-center justify-center w-12 h-12 bg-amber-200 rounded-xl text-2xl">📋</span>
+                <div>
+                  <h3 className="text-lg font-bold text-amber-900">Onboarding de Cliente</h3>
+                  <p className="text-sm text-amber-700">
+                    Este cliente fue ganado recientemente. Completá la información pendiente.
+                  </p>
+                </div>
+              </div>
+              <div className="text-right">
+                <p className="text-2xl font-bold text-amber-900">{onboardingCompleted}/{onboardingItems.length}</p>
+                <p className="text-xs text-amber-600">completados</p>
+              </div>
+            </div>
+
+            {/* Progress bar */}
+            <div className="mb-5">
+              <div className="w-full bg-amber-200 rounded-full h-2.5">
+                <div
+                  className="bg-amber-600 h-2.5 rounded-full transition-all"
+                  style={{ width: `${onboardingItems.length > 0 ? (onboardingCompleted / onboardingItems.length) * 100 : 0}%` }}
+                />
+              </div>
+            </div>
+
+            {/* Checklist items */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-5">
+              {onboardingItems.map(item => (
+                <div
+                  key={item.key}
+                  className={cn(
+                    'flex items-center gap-3 p-3 rounded-lg border transition-colors',
+                    item.done
+                      ? 'bg-green-50 border-green-200'
+                      : 'bg-white border-amber-200'
+                  )}
+                >
+                  {item.done ? (
+                    <span className="flex items-center justify-center w-7 h-7 bg-green-500 rounded-full">
+                      <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                      </svg>
+                    </span>
+                  ) : (
+                    <span className="flex items-center justify-center w-7 h-7 border-2 border-amber-300 rounded-full bg-white">
+                      <span className="w-2 h-2 bg-amber-300 rounded-full" />
+                    </span>
+                  )}
+                  <span className={cn('text-sm font-medium', item.done ? 'text-green-700 line-through' : 'text-gray-800')}>
+                    {item.label}
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            {/* Actions */}
+            <div className="flex gap-3">
+              <Button onClick={openOnboardingEdit}>
+                <svg className="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                </svg>
+                Completar Datos
+              </Button>
+              {onboardingCompleted === onboardingItems.length && (
+                <Button variant="outline" onClick={handleMarkActive} className="border-green-500 text-green-700 hover:bg-green-50">
+                  <svg className="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  Marcar como Activo
+                </Button>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Stats Row */}
       <div className="grid grid-cols-4 gap-4 mb-6">
@@ -670,6 +798,68 @@ export default function ClientDetailPage() {
             </Button>
             <Button onClick={handleQuickLog} disabled={isSubmitting || !activityForm.subject.trim()}>
               {isSubmitting ? 'Guardando...' : 'Guardar Actividad'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Onboarding Edit Modal */}
+      <Modal
+        isOpen={isOnboardingEditOpen}
+        onClose={() => setIsOnboardingEditOpen(false)}
+        title="Completar Datos del Cliente"
+        size="lg"
+      >
+        <div className="space-y-5">
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-800">
+            Completá los datos faltantes de este cliente. Los campos que ya tienen información se muestran prellenados.
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <Input
+              label="Email *"
+              type="email"
+              placeholder="cliente@empresa.com"
+              value={onboardingForm.email}
+              onChange={(e) => setOnboardingForm({ ...onboardingForm, email: e.target.value })}
+            />
+            <Input
+              label="Teléfono *"
+              placeholder="+598 99 123 456"
+              value={onboardingForm.phone}
+              onChange={(e) => setOnboardingForm({ ...onboardingForm, phone: e.target.value })}
+            />
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <Input
+              label="Empresa *"
+              placeholder="Nombre de la empresa"
+              value={onboardingForm.company}
+              onChange={(e) => setOnboardingForm({ ...onboardingForm, company: e.target.value })}
+            />
+            <Input
+              label="Cargo / Posición *"
+              placeholder="CEO, Gerente, etc."
+              value={onboardingForm.position}
+              onChange={(e) => setOnboardingForm({ ...onboardingForm, position: e.target.value })}
+            />
+          </div>
+
+          <Textarea
+            label="Notas adicionales"
+            placeholder="Condiciones de pago, servicio contratado, datos fiscales..."
+            value={onboardingForm.notes}
+            onChange={(e) => setOnboardingForm({ ...onboardingForm, notes: e.target.value })}
+            rows={3}
+          />
+
+          <div className="flex justify-end gap-3 pt-4 border-t">
+            <Button variant="outline" onClick={() => setIsOnboardingEditOpen(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={handleOnboardingSave}>
+              Guardar Datos
             </Button>
           </div>
         </div>

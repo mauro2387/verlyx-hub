@@ -333,6 +333,8 @@ export default function ProspectingPage() {
 
   const filteredLeads = useMemo(() => {
     return leads.filter(l => {
+      // Hide converted leads — they live in Oportunidades now
+      if (l.convertedToOpportunityId) return false;
       if (filterStatus && l.status !== filterStatus) return false;
       if (filterSource && l.source !== filterSource) return false;
       if (searchTerm) {
@@ -385,7 +387,11 @@ export default function ProspectingPage() {
     if (lead.status === 'not_contacted') {
       await updateLead(lead.id, { status: 'contacted', channel: 'whatsapp' });
     }
-  }, [updateLead]);
+    // Auto-convert to opportunity
+    if (!lead.convertedToOpportunityId) {
+      await convertToOpportunity(lead.id);
+    }
+  }, [updateLead, convertToOpportunity]);
 
   const handleOpenBulkEmail = useCallback(() => {
     setEmailSubject('');
@@ -424,10 +430,13 @@ export default function ProspectingPage() {
       sent = data.sent || 0;
       failed = data.failed || 0;
 
-      // Update all emailed leads to "contacted" status
+      // Mark as contacted + auto-convert to opportunity
       for (const lead of withEmail) {
         if (lead.status === 'not_contacted') {
           await updateLead(lead.id, { status: 'contacted', channel: 'email' });
+        }
+        if (!lead.convertedToOpportunityId) {
+          await convertToOpportunity(lead.id);
         }
       }
     } catch (err) {
@@ -437,7 +446,8 @@ export default function ProspectingPage() {
 
     setEmailSendResult({ sent, failed, noEmail });
     setIsSendingEmails(false);
-  }, [emailSubject, emailBody, leads, selectedLeadIds, updateLead]);
+    setSelectedLeadIds(new Set());
+  }, [emailSubject, emailBody, leads, selectedLeadIds, updateLead, convertToOpportunity]);
 
   const handleBulkConvertToOpportunity = useCallback(async () => {
     const contactedLeads = leads.filter(l =>
@@ -459,7 +469,7 @@ export default function ProspectingPage() {
   // ==========================================
 
   const leadsWithCoords = useMemo(
-    () => leads.filter(l => l.lat != null && l.lng != null),
+    () => leads.filter(l => l.lat != null && l.lng != null && !l.convertedToOpportunityId),
     [leads]
   );
 
