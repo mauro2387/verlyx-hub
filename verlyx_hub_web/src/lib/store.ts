@@ -2842,6 +2842,9 @@ interface LeadsState {
   setFilter: (filter: Partial<LeadsState['filter']>) => void;
   addActivity: (activity: Partial<LeadActivity>) => Promise<void>;
   convertToOpportunity: (leadId: string) => Promise<string | null>;
+  auditLead: (leadId: string) => Promise<Record<string, unknown> | null>;
+  generateProposal: (leadId: string) => Promise<Record<string, unknown> | null>;
+  runMarketScan: (prospects: Record<string, unknown>[], city: string, businessType: string) => Promise<Record<string, unknown> | null>;
 }
 
 export const useLeadsStore = create<LeadsState>((set, get) => ({
@@ -2892,6 +2895,10 @@ export const useLeadsStore = create<LeadsState>((set, get) => ({
         ownerUserId: d.owner_user_id,
         tags: d.tags || [],
         customFields: d.custom_fields || {},
+        opportunityType: d.opportunity_type || null,
+        digitalScore: d.digital_score || 0,
+        lastAuditAt: d.last_audit_at || null,
+        auditData: d.audit_data || null,
         createdAt: d.created_at,
         updatedAt: d.updated_at,
       }));
@@ -3131,6 +3138,99 @@ export const useLeadsStore = create<LeadsState>((set, get) => ({
       return data.opportunity_id as string;
     }
     return null;
+  },
+
+  auditLead: async (leadId: string) => {
+    try {
+      const res = await fetch('/api/audit/website', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'audit-lead', leadId }),
+      });
+      const data = await res.json();
+      if (res.ok && data.result) {
+        // Update local state
+        set(state => ({
+          leads: state.leads.map(l =>
+            l.id === leadId
+              ? {
+                  ...l,
+                  opportunityType: data.result.opportunityType,
+                  digitalScore: data.result.score,
+                  lastAuditAt: data.result.auditedAt,
+                  auditData: data.result,
+                }
+              : l
+          ),
+          selectedLead: state.selectedLead?.id === leadId
+            ? {
+                ...state.selectedLead,
+                opportunityType: data.result.opportunityType,
+                digitalScore: data.result.score,
+                lastAuditAt: data.result.auditedAt,
+                auditData: data.result,
+              }
+            : state.selectedLead,
+        }));
+        toast.success('Audit completado', `Score digital: ${data.result.score}/100 — ${data.result.opportunityType}`);
+        return data.result;
+      }
+      if (data.error) toast.error('Error en audit', data.error);
+      return null;
+    } catch {
+      toast.error('Error en audit', 'No se pudo conectar con el servidor');
+      return null;
+    }
+  },
+
+  generateProposal: async (leadId: string) => {
+    try {
+      const res = await fetch('/api/proposals/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ leadId }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        toast.success('Propuesta generada', `Propuesta para "${data.lead?.name}" lista`);
+        return data;
+      }
+      toast.error('Error', data.error || 'No se pudo generar la propuesta');
+      return null;
+    } catch {
+      toast.error('Error', 'No se pudo conectar con el servidor');
+      return null;
+    }
+  },
+
+  runMarketScan: async (prospects, city, businessType) => {
+    const companyId = useCompanyStore.getState().selectedCompanyId;
+    const userId = useAuthStore.getState().user?.id;
+    if (!companyId || !userId) return null;
+
+    try {
+      const res = await fetch('/api/audit/website', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'market-scan',
+          prospects,
+          companyId,
+          userId,
+          city,
+          businessType,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        toast.success('Market scan completo', `${data.summary.total} negocios analizados`);
+        return data;
+      }
+      return null;
+    } catch {
+      toast.error('Error', 'No se pudo ejecutar el market scan');
+      return null;
+    }
   },
 }));
 

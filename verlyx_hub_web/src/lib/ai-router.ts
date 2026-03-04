@@ -22,7 +22,9 @@ export type AITaskType =
   | 'summarize'
   | 'extract'
   | 'chat'
-  | 'analyze';
+  | 'analyze'
+  | 'generate_proposal'
+  | 'audit_analyze';
 
 export type AIModelTier = 'fast' | 'balanced' | 'powerful';
 
@@ -153,6 +155,14 @@ const DEFAULT_ROUTES: Record<AITaskType, AIRouteConfig[]> = {
   analyze: [
     { modelName: 'gpt-4.1', maxRetries: 2, timeoutMs: 60000, priority: 1 },
     { modelName: 'gpt-4o', maxRetries: 1, timeoutMs: 60000, priority: 2 },
+  ],
+  generate_proposal: [
+    { modelName: 'gpt-4.1', maxRetries: 2, timeoutMs: 60000, priority: 1 },
+    { modelName: 'gpt-4o', maxRetries: 1, timeoutMs: 60000, priority: 2 },
+  ],
+  audit_analyze: [
+    { modelName: 'gpt-4.1-mini', maxRetries: 2, timeoutMs: 15000, priority: 1 },
+    { modelName: 'gpt-4o-mini', maxRetries: 1, timeoutMs: 20000, priority: 2 },
   ],
 };
 
@@ -499,6 +509,70 @@ Return JSON with:
 Write in ${context.language || 'Spanish'}. Don't include phone numbers.`,
       jsonMode: true,
       temperature: 0.7,
+    });
+    return JSON.parse(response.content);
+  }
+  /**
+   * Convenience: Generate a commercial proposal based on audit data
+   */
+  async generateProposal(context: {
+    leadName: string;
+    businessType: string;
+    opportunityType: string;
+    auditScore: number;
+    auditIssues: string[];
+    companyName: string;
+    language?: string;
+  }): Promise<{ title: string; summary: string; sections: { heading: string; content: string }[]; callToAction: string }> {
+    const response = await this.execute({
+      taskType: 'generate_proposal',
+      messages: [{
+        role: 'user',
+        content: JSON.stringify(context),
+      }],
+      systemPrompt: `Eres un experto en propuestas comerciales de servicios digitales. Genera una propuesta profesional personalizada basada en el audit digital del negocio del lead.
+
+El lead tiene un score digital de ${context.auditScore}/100 y fue clasificado como "${context.opportunityType}".
+
+Problemas detectados:
+${context.auditIssues.map(i => '- ' + i).join('\n')}
+
+Genera la propuesta en JSON con esta estructura:
+{
+  "title": "Título de la propuesta",
+  "summary": "Resumen ejecutivo (2-3 oraciones)",
+  "sections": [
+    { "heading": "Diagnóstico", "content": "..." },
+    { "heading": "Solución propuesta", "content": "..." },
+    { "heading": "Beneficios esperados", "content": "..." },
+    { "heading": "Inversión y timeline", "content": "..." }
+  ],
+  "callToAction": "Texto del CTA final"
+}
+
+Escribe en ${context.language || 'español'}. Sé específico según el tipo de problema. Tono profesional pero cercano. Adapta la propuesta al tipo de negocio (${context.businessType}).`,
+      jsonMode: true,
+      temperature: 0.7,
+    });
+    return JSON.parse(response.content);
+  }
+
+  /**
+   * Convenience: Analyze audit data and provide actionable insights
+   */
+  async analyzeAudit(auditData: Record<string, unknown>, businessContext?: string): Promise<{ insights: string[]; priority: string; estimatedImpact: string }> {
+    const response = await this.execute({
+      taskType: 'audit_analyze',
+      messages: [{
+        role: 'user',
+        content: JSON.stringify({ audit: auditData, context: businessContext }),
+      }],
+      systemPrompt: `Analiza los datos del audit digital y devuelve un JSON con:
+- "insights": array de 3-5 insights accionables (en español)
+- "priority": "high" | "medium" | "low" — urgencia de actuar
+- "estimatedImpact": breve descripción del impacto de resolver los problemas`,
+      jsonMode: true,
+      temperature: 0.3,
     });
     return JSON.parse(response.content);
   }

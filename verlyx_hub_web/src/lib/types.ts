@@ -998,6 +998,11 @@ export interface Lead {
   ownerUserId?: string | null;
   tags?: string[];
   customFields?: Record<string, unknown>;
+  // Opportunity Engine fields
+  opportunityType?: string | null;
+  digitalScore?: number;
+  lastAuditAt?: string | null;
+  auditData?: Record<string, unknown> | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -1038,6 +1043,32 @@ export interface ProspectingCampaign {
   createdAt: string;
   updatedAt: string;
 }
+
+// ==========================================
+// MARKET SNAPSHOTS
+// ==========================================
+
+export interface MarketSnapshot {
+  id: string;
+  myCompanyId: string;
+  userId: string;
+  city: string;
+  businessType: string;
+  totalFound: number;
+  noWebsite: number;
+  brokenWebsite: number;
+  slowWebsite: number;
+  goodWebsite: number;
+  avgDigitalScore: number;
+  snapshotData?: Record<string, unknown>;
+  createdAt: string;
+}
+
+// ==========================================
+// DIGITAL AUDIT (re-export for convenience)
+// ==========================================
+
+export type { OpportunityType, DigitalAuditResult, DigitalAuditBreakdown } from './digital-audit';
 
 // ==========================================
 // OPPORTUNITIES MODULE (Sales Pipeline)

@@ -1005,4 +1005,203 @@ export const enterpriseHelpers = {
       return { data, error };
     },
   },
+
+  // ==========================================
+  // CLIENT LIFETIME ENGINE
+  // ==========================================
+
+  clientLifetime: {
+    /**
+     * Calculate LTV, churn risk, and revenue forecast for a client.
+     * Uses existing incomes + opportunities tables — no new tables needed.
+     */
+    async getMetrics(clientId: string): Promise<{
+      clientId: string;
+      ltv: number;
+      avgMonthlyRevenue: number;
+      churnRisk: 'low' | 'medium' | 'high';
+      revenueForcast30d: number;
+      revenueForcast90d: number;
+      totalPayments: number;
+      firstPaymentDate: string | null;
+      lastPaymentDate: string | null;
+      monthsActive: number;
+    }> {
+      // Fetch all received incomes for this client
+      const { data: incomes } = await supabase
+        .from('incomes')
+        .select('amount, payment_date, created_at')
+        .eq('client_id', clientId)
+        .eq('status', 'received')
+        .order('payment_date', { ascending: true });
+
+      const payments = incomes || [];
+      const totalLTV = payments.reduce((sum, i) => sum + (i.amount || 0), 0);
+      const totalPayments = payments.length;
+
+      // Calculate dates
+      const firstDate = payments[0]?.payment_date || payments[0]?.created_at || null;
+      const lastDate = payments.length > 0
+        ? payments[payments.length - 1]?.payment_date || payments[payments.length - 1]?.created_at
+        : null;
+
+      // Months active
+      let monthsActive = 0;
+      if (firstDate) {
+        const first = new Date(firstDate);
+        const now = new Date();
+        monthsActive = Math.max(1, Math.round(
+          (now.getTime() - first.getTime()) / (1000 * 60 * 60 * 24 * 30)
+        ));
+      }
+
+      const avgMonthlyRevenue = monthsActive > 0 ? totalLTV / monthsActive : 0;
+
+      // Churn risk based on days since last payment
+      let churnRisk: 'low' | 'medium' | 'high' = 'low';
+      if (lastDate) {
+        const daysSinceLast = Math.round(
+          (Date.now() - new Date(lastDate).getTime()) / (1000 * 60 * 60 * 24)
+        );
+        if (daysSinceLast > 90) churnRisk = 'high';
+        else if (daysSinceLast > 45) churnRisk = 'medium';
+      } else {
+        churnRisk = 'high'; // No payments at all
+      }
+
+      // Forecast based on average monthly revenue
+      const revenueForcast30d = avgMonthlyRevenue;
+      const revenueForcast90d = avgMonthlyRevenue * 3;
+
+      return {
+        clientId,
+        ltv: Math.round(totalLTV * 100) / 100,
+        avgMonthlyRevenue: Math.round(avgMonthlyRevenue * 100) / 100,
+        churnRisk,
+        revenueForcast30d: Math.round(revenueForcast30d * 100) / 100,
+        revenueForcast90d: Math.round(revenueForcast90d * 100) / 100,
+        totalPayments,
+        firstPaymentDate: firstDate,
+        lastPaymentDate: lastDate,
+        monthsActive,
+      };
+    },
+
+    /**
+     * Get top clients by LTV.
+     */
+    async getTopClients(companyId: string, limit = 10): Promise<{
+      clientId: string;
+      clientName: string;
+      ltv: number;
+      churnRisk: string;
+    }[]> {
+      // Get all clients (contacts with type='client')
+      const { data: clients } = await supabase
+        .from('contacts')
+        .select('id, first_name, last_name')
+        .eq('my_company_id', companyId)
+        .eq('type', 'client')
+        .limit(100);
+
+      if (!clients || clients.length === 0) return [];
+
+      // Calculate LTV for each client
+      const results = await Promise.all(
+        clients.map(async (c) => {
+          const metrics = await enterpriseHelpers.clientLifetime.getMetrics(c.id);
+          return {
+            clientId: c.id,
+            clientName: `${c.first_name} ${c.last_name || ''}`.trim(),
+            ltv: metrics.ltv,
+            churnRisk: metrics.churnRisk,
+          };
+        })
+      );
+
+      return results
+        .sort((a, b) => b.ltv - a.ltv)
+        .slice(0, limit);
+    },
+
+    /**
+     * Get clients at risk of churn (high risk).
+     */
+    async getChurnRiskClients(companyId: string): Promise<{
+      clientId: string;
+      clientName: string;
+      ltv: number;
+      daysSinceLastPayment: number;
+    }[]> {
+      const { data: clients } = await supabase
+        .from('contacts')
+        .select('id, first_name, last_name')
+        .eq('my_company_id', companyId)
+        .eq('type', 'client')
+        .limit(100);
+
+      if (!clients || clients.length === 0) return [];
+
+      const results = await Promise.all(
+        clients.map(async (c) => {
+          const metrics = await enterpriseHelpers.clientLifetime.getMetrics(c.id);
+          if (metrics.churnRisk !== 'high') return null;
+
+          const daysSince = metrics.lastPaymentDate
+            ? Math.round((Date.now() - new Date(metrics.lastPaymentDate).getTime()) / (1000 * 60 * 60 * 24))
+            : 999;
+
+          return {
+            clientId: c.id,
+            clientName: `${c.first_name} ${c.last_name || ''}`.trim(),
+            ltv: metrics.ltv,
+            daysSinceLastPayment: daysSince,
+          };
+        })
+      );
+
+      return results
+        .filter((r): r is NonNullable<typeof r> => r !== null)
+        .sort((a, b) => b.daysSinceLastPayment - a.daysSinceLastPayment);
+    },
+  },
+
+  // ==========================================
+  // MARKET SCANNER
+  // ==========================================
+
+  marketScanner: {
+    /**
+     * Get historical market snapshots for a company.
+     */
+    async getSnapshots(companyId: string, filters?: { city?: string; businessType?: string }) {
+      let query = supabase
+        .from('market_snapshots')
+        .select('*')
+        .eq('my_company_id', companyId)
+        .order('created_at', { ascending: false });
+
+      if (filters?.city) query = query.eq('city', filters.city);
+      if (filters?.businessType) query = query.eq('business_type', filters.businessType);
+
+      const { data, error } = await query.limit(50);
+      return { data, error };
+    },
+
+    /**
+     * Get market evolution for a specific city+type over time.
+     */
+    async getEvolution(companyId: string, city: string, businessType: string) {
+      const { data, error } = await supabase
+        .from('market_snapshots')
+        .select('total_found, no_website, broken_website, slow_website, good_website, avg_digital_score, created_at')
+        .eq('my_company_id', companyId)
+        .eq('city', city)
+        .eq('business_type', businessType)
+        .order('created_at', { ascending: true })
+        .limit(20);
+
+      return { data, error };
+    },
+  },
 };

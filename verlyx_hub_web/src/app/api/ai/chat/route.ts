@@ -41,6 +41,7 @@ async function buildBusinessContext(userId: string): Promise<string> {
     accountsRes,
     leadsRes,
     opportunitiesRes,
+    hotLeadsRes,
   ] = await Promise.all([
     supabase.from('my_companies').select('id, name, currency').eq('user_id', userId),
     supabase.from('deals').select('id, name, stage, value, currency, expected_close_date, contact_id').eq('user_id', userId).order('created_at', { ascending: false }).limit(50),
@@ -51,6 +52,8 @@ async function buildBusinessContext(userId: string): Promise<string> {
     supabase.from('accounts').select('id, name, type, currency, current_balance').limit(20),
     supabase.from('leads').select('id, company_name, status, source, prospect_score, contact_attempts, created_at').order('created_at', { ascending: false }).limit(30),
     supabase.from('opportunities').select('id, title, stage, tentative_amount, final_amount, probability, currency, next_action_date').order('created_at', { ascending: false }).limit(30),
+    // HOT LEADS: high digital score, not yet contacted
+    supabase.from('leads').select('id, company_name, digital_score, opportunity_type, website, status, prospect_score').gte('digital_score', 0).order('digital_score', { ascending: false }).limit(10),
   ]);
 
   const companies = companiesRes.data || [];
@@ -62,6 +65,7 @@ async function buildBusinessContext(userId: string): Promise<string> {
   const accounts = accountsRes.data || [];
   const leads = leadsRes.data || [];
   const opportunities = opportunitiesRes.data || [];
+  const hotLeads = (hotLeadsRes.data || []).filter((l: any) => l.digital_score > 0 || l.opportunity_type);
 
   // Calculate summaries
   const activeDeals = deals.filter(d => !['won', 'lost'].includes(d.stage));
@@ -112,6 +116,14 @@ Leads activos: ${activeLeads.length}
 Respondidos (listos para conversión): ${respondedLeads.length}
 Score promedio: ${activeLeads.length > 0 ? Math.round(activeLeads.reduce((s: number, l: any) => s + (l.prospect_score || 0), 0) / activeLeads.length) : 0}/100
 ${respondedLeads.length > 0 ? `🟢 Leads listos: ${respondedLeads.slice(0, 3).map((l: any) => `"${l.company_name}" (score: ${l.prospect_score})`).join(', ')}` : ''}
+${hotLeads.length > 0 ? `
+── OPORTUNIDADES DIGITALES (AUDIT ENGINE) ──
+Leads con audit digital: ${hotLeads.length}
+${hotLeads.filter((l: any) => l.opportunity_type === 'NO_WEBSITE').length > 0 ? `🔴 Sin sitio web: ${hotLeads.filter((l: any) => l.opportunity_type === 'NO_WEBSITE').length} leads` : ''}
+${hotLeads.filter((l: any) => l.opportunity_type === 'BROKEN_WEBSITE').length > 0 ? `💔 Web rota: ${hotLeads.filter((l: any) => l.opportunity_type === 'BROKEN_WEBSITE').length} leads` : ''}
+${hotLeads.filter((l: any) => l.opportunity_type === 'BAD_SEO').length > 0 ? `🔍 SEO deficiente: ${hotLeads.filter((l: any) => l.opportunity_type === 'BAD_SEO').length} leads` : ''}
+${hotLeads.filter((l: any) => l.status === 'not_contacted').length > 0 ? `⚡ Sin contactar con oportunidad clara: ${hotLeads.filter((l: any) => l.status === 'not_contacted').slice(0, 3).map((l: any) => `"${l.company_name}" (score digital: ${l.digital_score}, tipo: ${l.opportunity_type})`).join(', ')}` : ''}
+` : ''}
 
 ── PIPELINE OPORTUNIDADES ──
 Oportunidades activas: ${activeOpps.length} por $${oppPipelineValue.toLocaleString()}
@@ -413,6 +425,57 @@ const aiTools = {
       };
     },
   }),
+
+  get_digital_opportunities: tool({
+    description: 'Obtiene leads con oportunidades digitales detectadas por el audit engine (sin web, web rota, SEO malo, etc.)',
+    inputSchema: z.object({
+      opportunityType: z.enum(['NO_WEBSITE', 'BROKEN_WEBSITE', 'SLOW_WEBSITE', 'BAD_SEO', 'LOW_DIGITAL_PRESENCE', 'GOOD_PRESENCE']).optional().describe('Filtrar por tipo de oportunidad'),
+      minScore: z.number().optional().describe('Score digital mínimo (0-100)'),
+    }),
+    execute: async ({ opportunityType, minScore }) => {
+      let query = supabase
+        .from('leads')
+        .select('id, company_name, digital_score, opportunity_type, website, status, prospect_score, business_type, contact_email, contact_phone');
+
+      if (opportunityType) query = query.eq('opportunity_type', opportunityType);
+      if (minScore !== undefined) query = query.gte('digital_score', minScore);
+
+      const { data: digitLeads, error } = await query
+        .not('opportunity_type', 'is', null)
+        .order('digital_score', { ascending: false })
+        .limit(20);
+
+      if (error) return { error: error.message };
+      const leadList = digitLeads || [];
+
+      return {
+        total: leadList.length,
+        por_tipo: {
+          sin_web: leadList.filter(l => l.opportunity_type === 'NO_WEBSITE').length,
+          web_rota: leadList.filter(l => l.opportunity_type === 'BROKEN_WEBSITE').length,
+          web_lenta: leadList.filter(l => l.opportunity_type === 'SLOW_WEBSITE').length,
+          seo_malo: leadList.filter(l => l.opportunity_type === 'BAD_SEO').length,
+          presencia_debil: leadList.filter(l => l.opportunity_type === 'LOW_DIGITAL_PRESENCE').length,
+          buena_presencia: leadList.filter(l => l.opportunity_type === 'GOOD_PRESENCE').length,
+        },
+        sin_contactar: leadList.filter(l => l.status === 'not_contacted').length,
+        leads: leadList.map(l => ({
+          nombre: l.company_name,
+          tipo_oportunidad: l.opportunity_type,
+          score_digital: l.digital_score,
+          score_prospecto: l.prospect_score,
+          web: l.website || 'Sin web',
+          estado: l.status,
+          tipo_negocio: l.business_type,
+          tiene_email: !!l.contact_email,
+          tiene_telefono: !!l.contact_phone,
+        })),
+        recomendacion: leadList.filter(l => l.status === 'not_contacted').length > 0
+          ? `Hay ${leadList.filter(l => l.status === 'not_contacted').length} leads con oportunidad digital que aún no han sido contactados. Te recomiendo priorizar los que tienen tipo "NO_WEBSITE" o "BROKEN_WEBSITE" — son los que más necesitan tus servicios.`
+          : 'Todos los leads con oportunidades digitales ya fueron contactados.',
+      };
+    },
+  }),
 };
 
 // ==========================================
@@ -499,7 +562,10 @@ INSTRUCCIONES:
 - Nunca inventes datos. Solo usa la información del contexto o la que obtengas via tools
 - Para leads/prospectos, usa get_leads_summary
 - Para oportunidades de ventas, usa get_opportunities_pipeline
-- Si el usuario quiere convertir un lead a oportunidad, explica que el lead debe estar en estado "responded"`;
+- Si el usuario quiere convertir un lead a oportunidad, explica que el lead debe estar en estado "responded"
+- Para oportunidades digitales (leads auditados), usa get_digital_opportunities
+- Si hay leads sin contactar con alto score digital, sugiere proactivamente contactarlos
+- Puedes recomendar ejecutar un audit digital desde la página de prospección`;
 
     // Convert UIMessages from client to ModelMessages for streamText
     const modelMessages = await convertToModelMessages(messages);

@@ -32,9 +32,10 @@ function createIcon(color: string, size: [number, number] = [28, 40]) {
 }
 
 const ICONS = {
-  // Prospect markers: yellow = has website, green = no website
-  prospect_with_web: createIcon('#eab308'),  // yellow — has website
-  prospect_no_web: createIcon('#22c55e'),    // green — no website
+  // Prospect markers: orange = has website, yellow = some data, red = no data
+  prospect_with_web: createIcon('#f97316'),  // bright orange — has website
+  prospect_some_data: createIcon('#eab308'), // yellow — has phone/email but no web
+  prospect_no_data: createIcon('#ef4444'),   // red — no data at all
   saved: createIcon('#3b82f6'),               // blue — already saved as lead
   // Lead markers by status
   lead_not_contacted: createIcon('#9ca3af'), // gray
@@ -42,15 +43,30 @@ const ICONS = {
   lead_waiting: createIcon('#eab308'),       // yellow
   lead_responded: createIcon('#22c55e'),     // green
   lead_not_interested: createIcon('#ef4444'), // red
+  // Digital score icons (Business Radar)
+  digital_red: createIcon('#EF4444'),     // 0 — sin web / no auditado
+  digital_orange: createIcon('#F97316'),  // < 50 — presencia débil
+  digital_green: createIcon('#22C55E'),   // >= 50 — presencia sólida
   selected: createIcon('#f97316', [34, 48]), // orange, bigger
 };
 
 function getProspectIcon(prospect: ProspectMarker, isSaved: boolean) {
   if (isSaved) return ICONS.saved;
-  return prospect.website ? ICONS.prospect_with_web : ICONS.prospect_no_web;
+  if (prospect.website) return ICONS.prospect_with_web;
+  if (prospect.phone || prospect.email) return ICONS.prospect_some_data;
+  return ICONS.prospect_no_data;
 }
 
-function getLeadIcon(status: string) {
+function getLeadIcon(status: string, digitalScore?: number) {
+  // If lead has been audited, use digital score coloring (Business Radar)
+  if (digitalScore !== undefined && digitalScore > 0) {
+    if (digitalScore >= 50) return ICONS.digital_green;
+    return ICONS.digital_orange;
+  }
+  if (digitalScore === 0 && status !== 'not_contacted') {
+    return ICONS.digital_red;
+  }
+  // Default: status-based coloring
   switch (status) {
     case 'contacted': return ICONS.lead_contacted;
     case 'waiting_response': return ICONS.lead_waiting;
@@ -74,7 +90,9 @@ interface ProspectingMapProps {
   onSelectLead: (l: Lead) => void;
   onMapMove: (center: GeoPoint) => void;
   onSaveProspect: (p: ProspectMarker) => void;
+  onAuditLead?: (leadId: string) => void;
   searchRadius: number;
+  colorMode?: 'status' | 'digital'; // 'status' = default, 'digital' = Business Radar
 }
 
 // ==========================================
@@ -91,7 +109,9 @@ export default function ProspectingMap({
   onSelectLead,
   onMapMove,
   onSaveProspect,
+  onAuditLead,
   searchRadius,
+  colorMode = 'status',
 }: ProspectingMapProps) {
   const mapRef = useRef<L.Map | null>(null);
   const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -152,23 +172,22 @@ export default function ProspectingMap({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Update center/zoom from props — only when it actually changed programmatically
+  // Update center from props — only when it actually changed programmatically
   // (not from user panning, which already updated the map)
+  // NOTE: zoom is NOT changed programmatically — user controls zoom manually
   useEffect(() => {
     if (!mapRef.current) return;
     const latDiff = Math.abs(center.lat - prevCenter.current.lat);
     const lngDiff = Math.abs(center.lng - prevCenter.current.lng);
-    const zoomChanged = zoom !== prevZoom.current;
 
-    // Only fly to new position if the change is significant (> ~100m) or zoom changed
-    if (latDiff > 0.001 || lngDiff > 0.001 || zoomChanged) {
+    // Only pan to new position if the change is significant (> ~100m)
+    if (latDiff > 0.001 || lngDiff > 0.001) {
       isProgrammaticMove.current = true;
-      mapRef.current.setView([center.lat, center.lng], zoom, { animate: true });
+      mapRef.current.setView([center.lat, center.lng], mapRef.current.getZoom(), { animate: true });
     }
 
     prevCenter.current = { lat: center.lat, lng: center.lng };
-    prevZoom.current = zoom;
-  }, [center.lat, center.lng, zoom]);
+  }, [center.lat, center.lng]);
 
   // Render radius circle
   useEffect(() => {
@@ -209,7 +228,7 @@ export default function ProspectingMap({
           div.innerHTML = `
             <div style="min-width: 230px;">
               <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 4px;">
-                <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: ${p.website ? '#eab308' : '#22c55e'}; flex-shrink: 0;"></span>
+                <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: ${p.website ? '#f97316' : (p.phone || p.email || (p.tags && (p.tags['contact:email'] || p.tags['phone']))) ? '#eab308' : '#ef4444'}; flex-shrink: 0;"></span>
                 <span style="font-weight: 600; font-size: 14px;">${escapeHtml(p.name)}</span>
               </div>
               <div style="color: #6b7280; font-size: 12px; margin-bottom: 4px;">${escapeHtml(p.businessType)}</div>
@@ -257,9 +276,15 @@ export default function ProspectingMap({
 
     leads.forEach((l) => {
       if (l.lat == null || l.lng == null) return;
-      const icon = getLeadIcon(l.status);
+      const icon = colorMode === 'digital'
+        ? getLeadIcon(l.status, l.digitalScore)
+        : getLeadIcon(l.status);
       const googleSearchUrl = `https://www.google.com/search?q=${encodeURIComponent(l.companyName + (l.address ? ' ' + l.address : ''))}`;
       const googleMapsUrl = `https://www.google.com/maps/search/${encodeURIComponent(l.companyName + (l.address ? ', ' + l.address : ''))}`;
+      const scoreDigital = l.digitalScore !== undefined && l.digitalScore > 0 ? l.digitalScore : null;
+      const auditBadge = l.opportunityType
+        ? `<div style="font-size: 11px; margin-top: 4px; padding: 2px 6px; border-radius: 4px; display: inline-block; background: ${scoreDigital && scoreDigital >= 50 ? '#dcfce7' : '#fef2f2'}; color: ${scoreDigital && scoreDigital >= 50 ? '#166534' : '#991b1b'};">${escapeHtml(l.opportunityType.replace(/_/g, ' '))} — ${scoreDigital ?? 0}/100</div>`
+        : '';
 
       const marker = L.marker([l.lat, l.lng], { icon })
         .bindPopup(`
@@ -268,6 +293,7 @@ export default function ProspectingMap({
             ${l.businessType ? `<div style="color: #6b7280; font-size: 12px; margin-bottom: 4px;">${escapeHtml(l.businessType)}</div>` : ''}
             <div style="font-size: 12px; margin-bottom: 2px;">Estado: <strong>${escapeHtml(getStatusLabel(l.status))}</strong></div>
             <div style="font-size: 12px; margin-bottom: 4px;">Score: <strong>${l.prospectScore}</strong></div>
+            ${auditBadge}
             ${l.contactPhone ? `<div style="font-size: 12px; margin-bottom: 2px;">📞 <a href="tel:${escapeHtml(l.contactPhone)}" style="color: #1e40af;">${escapeHtml(l.contactPhone)}</a></div>` : ''}
             ${l.contactEmail ? `<div style="font-size: 12px; margin-bottom: 2px;">✉️ <a href="mailto:${escapeHtml(l.contactEmail)}" style="color: #2563eb;">${escapeHtml(l.contactEmail)}</a></div>` : ''}
             ${l.website ? `<div style="font-size: 12px; margin-bottom: 2px;">🌐 <a href="${escapeHtml(l.website.startsWith('http') ? l.website : 'https://' + l.website)}" target="_blank" style="color: #2563eb;">${escapeHtml(l.website)}</a></div>` : ''}

@@ -6,6 +6,7 @@ import { MainLayout } from '@/components/layout';
 import { Button, Card, CardContent, Loading, Modal, Input, Textarea, SearchInput } from '@/components/ui';
 import { useLeadsStore, useCompanyStore } from '@/lib/store';
 import { Lead, LeadStatus, LeadSource, ContactChannel } from '@/lib/types';
+import { OPPORTUNITY_TYPE_LABELS } from '@/lib/digital-audit';
 import { BUSINESS_PRESETS, type ProspectMarker, type GeoPoint } from '@/lib/map-service';
 import { formatDate, cn } from '@/lib/utils';
 
@@ -53,6 +54,12 @@ const CHANNEL_OPTIONS: { value: ContactChannel; label: string }[] = [
 ];
 
 type ViewMode = 'map' | 'list' | 'campaigns';
+
+interface ProspectGroup {
+  id: string;
+  title: string;
+  prospects: ProspectMarker[];
+}
 
 interface LeadFormData {
   companyName: string;
@@ -102,7 +109,7 @@ function computeAutoScore(prospect: ProspectMarker): number {
 export default function ProspectingPage() {
   const {
     leads, isLoading, fetchLeads, createLead, updateLead, deleteLead,
-    convertToOpportunity,
+    convertToOpportunity, auditLead, generateProposal, runMarketScan,
   } = useLeadsStore();
   const { selectedCompanyId } = useCompanyStore();
 
@@ -142,6 +149,28 @@ export default function ProspectingPage() {
   const [isWhatsAppModalOpen, setIsWhatsAppModalOpen] = useState(false);
   const [waMessage, setWaMessage] = useState('');
   const [waOpenedIndexes, setWaOpenedIndexes] = useState<Set<number>>(new Set());
+
+  // Prospecting groups
+  const [prospectGroups, setProspectGroups] = useState<ProspectGroup[]>([]);
+  const [activeGroupId, setActiveGroupId] = useState<string | null>(null);
+  const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
+  const [newGroupTitle, setNewGroupTitle] = useState('');
+
+  // City for Google search
+  const [searchCity, setSearchCity] = useState('');
+
+  // Business Radar / digital audit
+  const [colorMode, setColorMode] = useState<'status' | 'digital'>('status');
+  const [isAuditing, setIsAuditing] = useState(false);
+  const [isGeneratingProposal, setIsGeneratingProposal] = useState(false);
+  const [isScanning, setIsScanning] = useState(false);
+  const [marketScanResult, setMarketScanResult] = useState<{ totalAudited: number; avgScore: number; byType: Record<string, number> } | null>(null);
+
+  // Pre-compute leads with coords (needed by handlers)
+  const leadsWithCoords = useMemo(
+    () => leads.filter(l => l.lat != null && l.lng != null && !l.convertedToOpportunityId),
+    [leads]
+  );
 
   useEffect(() => {
     if (selectedCompanyId) fetchLeads();
@@ -205,6 +234,8 @@ export default function ProspectingPage() {
 
   const handleLocationSearch = useCallback(async (query: string) => {
     if (!query.trim()) return;
+    // Capture city name from the search query
+    setSearchCity(query.trim());
     try {
       const res = await fetch('/api/map/search', {
         method: 'POST',
@@ -215,10 +246,104 @@ export default function ProspectingPage() {
       if (data.results?.length > 0) {
         const r = data.results[0];
         setMapCenter({ lat: parseFloat(r.lat), lng: parseFloat(r.lon) });
-        setMapZoom(15);
       }
     } catch {/* ignore */}
   }, []);
+
+  // ==========================================
+  // PROSPECTING GROUPS
+  // ==========================================
+
+  const handleCreateGroup = useCallback((title: string) => {
+    if (!title.trim()) return;
+    const newGroup: ProspectGroup = {
+      id: crypto.randomUUID(),
+      title: title.trim(),
+      prospects: [],
+    };
+    setProspectGroups(prev => [...prev, newGroup]);
+    setActiveGroupId(newGroup.id);
+    setIsGroupModalOpen(false);
+    setNewGroupTitle('');
+  }, []);
+
+  const handleDeleteGroup = useCallback((groupId: string) => {
+    setProspectGroups(prev => prev.filter(g => g.id !== groupId));
+    if (activeGroupId === groupId) setActiveGroupId(null);
+  }, [activeGroupId]);
+
+  const handleCopyGroupNames = useCallback((groupId: string) => {
+    const group = prospectGroups.find(g => g.id === groupId);
+    if (group && group.prospects.length > 0) {
+      const names = group.prospects.map(p => p.name).join(', ');
+      navigator.clipboard.writeText(names);
+    }
+  }, [prospectGroups]);
+
+  /** Build the Google search query: name + city */
+  const googleSearchQuery = useCallback((name: string) => {
+    return name + (searchCity ? ' ' + searchCity : '');
+  }, [searchCity]);
+
+  // ==========================================
+  // DIGITAL AUDIT / PROPOSAL / MARKET SCAN
+  // ==========================================
+
+  const handleAuditLead = useCallback(async (leadId: string) => {
+    setIsAuditing(true);
+    try {
+      await auditLead(leadId);
+      // Refresh detail panel if this lead is selected
+      const updated = useLeadsStore.getState().leads.find(l => l.id === leadId);
+      if (updated && detailLead?.id === leadId) setDetailLead(updated);
+    } finally {
+      setIsAuditing(false);
+    }
+  }, [auditLead, detailLead]);
+
+  const handleGenerateProposal = useCallback(async (leadId: string) => {
+    setIsGeneratingProposal(true);
+    try {
+      const result = await generateProposal(leadId);
+      if (result?.html) {
+        // Open proposal in a new tab
+        const w = window.open('', '_blank');
+        if (w) { w.document.write(result.html as string); w.document.close(); }
+      }
+    } finally {
+      setIsGeneratingProposal(false);
+    }
+  }, [generateProposal]);
+
+  const handleMarketScan = useCallback(async () => {
+    if (leadsWithCoords.length === 0) return;
+    setIsScanning(true);
+    setMarketScanResult(null);
+    try {
+      const prospects = leadsWithCoords
+        .filter(l => l.website)
+        .slice(0, 20)
+        .map(l => ({ url: l.website!, name: l.companyName }));
+      if (prospects.length === 0) return;
+      const result = await runMarketScan(
+        prospects,
+        searchCity || 'Sin ciudad',
+        selectedPreset ? (BUSINESS_PRESETS[selectedPreset]?.label || 'General') : 'General'
+      );
+      if (result) {
+        const byType: Record<string, number> = {};
+        const updatedLeads = useLeadsStore.getState().leads;
+        updatedLeads.forEach(l => {
+          if (l.opportunityType) byType[l.opportunityType] = (byType[l.opportunityType] || 0) + 1;
+        });
+        const audited = updatedLeads.filter(l => l.digitalScore !== undefined && l.digitalScore > 0);
+        const avg = audited.length > 0 ? Math.round(audited.reduce((a, l) => a + (l.digitalScore || 0), 0) / audited.length) : 0;
+        setMarketScanResult({ totalAudited: audited.length, avgScore: avg, byType });
+      }
+    } finally {
+      setIsScanning(false);
+    }
+  }, [leadsWithCoords, searchCity, selectedPreset, runMarketScan]);
 
   // ==========================================
   // LEAD CRUD
@@ -243,8 +368,16 @@ export default function ProspectingPage() {
     });
     if (newLead) {
       setSelectedProspect(null);
+      // Add to active group if one exists
+      if (activeGroupId) {
+        setProspectGroups(prev => prev.map(g =>
+          g.id === activeGroupId
+            ? { ...g, prospects: [...g.prospects, prospect] }
+            : g
+        ));
+      }
     }
-  }, [createLead]);
+  }, [createLead, activeGroupId]);
 
   const openCreateModal = useCallback((overrides?: Partial<LeadFormData>) => {
     setEditingLead(null);
@@ -468,11 +601,6 @@ export default function ProspectingPage() {
   // COMPUTED DATA
   // ==========================================
 
-  const leadsWithCoords = useMemo(
-    () => leads.filter(l => l.lat != null && l.lng != null && !l.convertedToOpportunityId),
-    [leads]
-  );
-
   const stats = useMemo(() => {
     const total = leads.length;
     const byStatus: Record<string, number> = {};
@@ -481,6 +609,13 @@ export default function ProspectingPage() {
     const withEmail = leads.filter(l => l.contactEmail).length;
     const withPhone = leads.filter(l => l.contactPhone).length;
     return { total, byStatus, avgScore, withEmail, withPhone };
+  }, [leads]);
+
+  const digitalStats = useMemo(() => {
+    const audited = leads.filter(l => l.digitalScore !== undefined && l.digitalScore > 0);
+    const avgDigital = audited.length > 0 ? Math.round(audited.reduce((a, l) => a + (l.digitalScore || 0), 0) / audited.length) : 0;
+    const lowScore = leads.filter(l => l.digitalScore !== undefined && l.digitalScore > 0 && l.digitalScore < 50).length;
+    return { audited: audited.length, avgDigital, lowScore };
   }, [leads]);
 
   // ==========================================
@@ -548,7 +683,7 @@ export default function ProspectingPage() {
           </div>
 
           {/* Stats strip */}
-          <div className="grid grid-cols-7 gap-3">
+          <div className="grid grid-cols-8 gap-3">
             <div className="bg-white border rounded-lg px-3 py-2">
               <div className="text-xs text-gray-500">Total Leads</div>
               <div className="text-lg font-bold text-gray-900">{stats.total}</div>
@@ -574,8 +709,12 @@ export default function ProspectingPage() {
               <div className="text-lg font-bold text-teal-600">{stats.withPhone}</div>
             </div>
             <div className="bg-white border rounded-lg px-3 py-2">
-              <div className="text-xs text-gray-500">Score promedio</div>
-              <div className="text-lg font-bold text-purple-600">{stats.avgScore}</div>
+              <div className="text-xs text-gray-500">Auditados</div>
+              <div className="text-lg font-bold text-orange-600">{digitalStats.audited}</div>
+            </div>
+            <div className="bg-white border rounded-lg px-3 py-2">
+              <div className="text-xs text-gray-500">Score digital</div>
+              <div className="text-lg font-bold text-purple-600">{digitalStats.avgDigital || '—'}</div>
             </div>
           </div>
         </div>
@@ -603,7 +742,7 @@ export default function ProspectingPage() {
                         onClick={() => {
                           if (navigator.geolocation) {
                             navigator.geolocation.getCurrentPosition(
-                              (pos) => { setMapCenter({ lat: pos.coords.latitude, lng: pos.coords.longitude }); setMapZoom(15); },
+                              (pos) => { setMapCenter({ lat: pos.coords.latitude, lng: pos.coords.longitude }); },
                               () => {}
                             );
                           }
@@ -681,21 +820,104 @@ export default function ProspectingPage() {
                 {/* Map legend */}
                 <Card>
                   <CardContent className="p-3">
-                    <div className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">Leyenda del mapa</div>
-                    <div className="space-y-1 text-xs">
-                      <div className="flex items-center gap-2">
-                        <span className="w-3 h-3 rounded-full bg-yellow-500 border border-yellow-600"></span>
-                        <span className="text-gray-600">Con sitio web</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="w-3 h-3 rounded-full bg-green-500 border border-green-600"></span>
-                        <span className="text-gray-600">Sin sitio web</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="w-3 h-3 rounded-full bg-blue-500 border border-blue-600"></span>
-                        <span className="text-gray-600">Guardado como lead</span>
-                      </div>
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="text-xs font-medium text-gray-500 uppercase tracking-wider">Leyenda del mapa</div>
+                      <button
+                        onClick={() => setColorMode(m => m === 'status' ? 'digital' : 'status')}
+                        className={cn(
+                          'text-xs font-medium px-2 py-1 rounded-lg transition-colors',
+                          colorMode === 'digital'
+                            ? 'bg-orange-100 text-orange-700 hover:bg-orange-200'
+                            : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                        )}
+                      >
+                        {colorMode === 'digital' ? '📡 Radar ON' : '📡 Radar'}
+                      </button>
                     </div>
+                    {colorMode === 'status' ? (
+                      <div className="space-y-1 text-xs">
+                        <div className="flex items-center gap-2">
+                          <span className="w-3 h-3 rounded-full bg-orange-500 border border-orange-600"></span>
+                          <span className="text-gray-600">Con sitio web</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="w-3 h-3 rounded-full bg-yellow-500 border border-yellow-600"></span>
+                          <span className="text-gray-600">Con algún dato</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="w-3 h-3 rounded-full bg-red-500 border border-red-600"></span>
+                          <span className="text-gray-600">Sin datos</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="w-3 h-3 rounded-full bg-blue-500 border border-blue-600"></span>
+                          <span className="text-gray-600">Guardado como lead</span>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-1 text-xs">
+                        <div className="flex items-center gap-2">
+                          <span className="w-3 h-3 rounded-full bg-green-500 border border-green-600"></span>
+                          <span className="text-gray-600">Score digital ≥ 50</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="w-3 h-3 rounded-full bg-orange-500 border border-orange-600"></span>
+                          <span className="text-gray-600">Score digital 1-49</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="w-3 h-3 rounded-full bg-red-500 border border-red-600"></span>
+                          <span className="text-gray-600">Score 0 / sin auditar</span>
+                        </div>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+
+                {/* Market Scanner */}
+                <Card>
+                  <CardContent className="p-3 space-y-2">
+                    <div className="text-sm font-medium text-gray-700">Market Scanner</div>
+                    <p className="text-xs text-gray-500">Audita todos los leads con web de esta zona para detectar oportunidades</p>
+                    <Button
+                      size="sm"
+                      className="w-full bg-orange-600 hover:bg-orange-700"
+                      onClick={handleMarketScan}
+                      disabled={isScanning || leadsWithCoords.filter(l => l.website).length === 0}
+                    >
+                      {isScanning ? (
+                        <span className="flex items-center gap-2">
+                          <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                          </svg>
+                          Escaneando...
+                        </span>
+                      ) : (
+                        `📡 Escanear zona (${leadsWithCoords.filter(l => l.website).length} con web)`
+                      )}
+                    </Button>
+                    {marketScanResult && (
+                      <div className="bg-orange-50 border border-orange-200 rounded-lg p-2 text-xs space-y-1">
+                        <div className="font-medium text-orange-800">Resultado del escaneo</div>
+                        <div className="text-gray-700">Auditados: <strong>{marketScanResult.totalAudited}</strong></div>
+                        <div className="text-gray-700">Score promedio: <strong>{marketScanResult.avgScore}/100</strong></div>
+                        {Object.entries(marketScanResult.byType).length > 0 && (
+                          <div className="space-y-0.5 mt-1 pt-1 border-t border-orange-200">
+                            {Object.entries(marketScanResult.byType).map(([type, count]) => (
+                              <div key={type} className="flex justify-between text-gray-600">
+                                <span>{OPPORTUNITY_TYPE_LABELS[type as keyof typeof OPPORTUNITY_TYPE_LABELS]?.label || type}</span>
+                                <span className="font-medium">{count}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        <button
+                          onClick={() => setColorMode('digital')}
+                          className="text-orange-700 hover:text-orange-900 font-medium mt-1 underline"
+                        >
+                          Ver en modo Radar →
+                        </button>
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
 
@@ -726,7 +948,7 @@ export default function ProspectingPage() {
                               )}
                             >
                               <div className="flex items-center gap-1.5">
-                                <span className={cn('w-2 h-2 rounded-full flex-shrink-0', p.website ? 'bg-yellow-500' : 'bg-green-500')} />
+                                <span className={cn('w-2 h-2 rounded-full flex-shrink-0', p.website ? 'bg-orange-500' : (p.phone || p.email) ? 'bg-yellow-500' : 'bg-red-500')} />
                                 <span className="font-medium text-gray-900 truncate">{p.name}</span>
                               </div>
                               <div className="text-xs text-gray-500 truncate mt-0.5">{p.businessType}</div>
@@ -741,7 +963,7 @@ export default function ProspectingPage() {
                                 <div className="flex items-center gap-2">
                                   {p.distance != null && <span className="text-xs text-gray-400">{p.distance.toFixed(1)} km</span>}
                                   <a
-                                    href={`https://www.google.com/search?q=${encodeURIComponent(p.name + (p.address ? ' ' + p.address : ''))}`}
+                                    href={`https://www.google.com/search?q=${encodeURIComponent(googleSearchQuery(p.name))}`}
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     onClick={(e) => e.stopPropagation()}
@@ -769,6 +991,98 @@ export default function ProspectingPage() {
                     </CardContent>
                   </Card>
                 )}
+
+                {/* Crear Grupo button + active group indicator */}
+                <Card>
+                  <CardContent className="p-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium text-gray-700">Grupos de prospección</span>
+                      <button
+                        onClick={() => { setNewGroupTitle(selectedPreset ? (BUSINESS_PRESETS[selectedPreset]?.label || '') : ''); setIsGroupModalOpen(true); }}
+                        className="text-xs font-medium text-white bg-purple-600 hover:bg-purple-700 px-2.5 py-1 rounded-lg transition-colors"
+                      >
+                        + Crear Grupo
+                      </button>
+                    </div>
+                    {activeGroupId && (
+                      <div className="flex items-center gap-2 text-xs bg-purple-50 border border-purple-200 px-2 py-1.5 rounded-lg">
+                        <span className="w-2 h-2 rounded-full bg-purple-500 animate-pulse" />
+                        <span className="text-purple-700 font-medium truncate">
+                          Guardando en: {prospectGroups.find(g => g.id === activeGroupId)?.title}
+                        </span>
+                        <button
+                          onClick={() => setActiveGroupId(null)}
+                          className="ml-auto text-purple-400 hover:text-purple-600"
+                          title="Dejar de guardar en grupo"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    )}
+                    {prospectGroups.length === 0 && !activeGroupId && (
+                      <p className="text-xs text-gray-400">Crea un grupo para agrupar negocios por tipo</p>
+                    )}
+                  </CardContent>
+                </Card>
+
+                {/* Prospect groups display */}
+                {prospectGroups.map((group) => (
+                  <Card key={group.id} className={cn(
+                    activeGroupId === group.id && 'ring-2 ring-purple-400'
+                  )}>
+                    <CardContent className="p-3">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium text-gray-900">{group.title}</span>
+                          <span className="text-xs bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded-full font-medium">{group.prospects.length}</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          {group.prospects.length > 0 && (
+                            <button
+                              onClick={() => handleCopyGroupNames(group.id)}
+                              className="text-xs text-gray-500 hover:text-purple-600 px-1.5 py-0.5 border rounded hover:border-purple-300 transition-colors"
+                              title="Copiar todos los nombres"
+                            >
+                              📋 Copiar nombres
+                            </button>
+                          )}
+                          {activeGroupId !== group.id ? (
+                            <button
+                              onClick={() => setActiveGroupId(group.id)}
+                              className="text-xs text-purple-600 hover:text-purple-800 px-1.5 py-0.5"
+                              title="Activar este grupo"
+                            >
+                              ◎
+                            </button>
+                          ) : (
+                            <span className="text-xs text-purple-600 px-1.5 py-0.5" title="Grupo activo">●</span>
+                          )}
+                          <button
+                            onClick={() => handleDeleteGroup(group.id)}
+                            className="text-xs text-gray-400 hover:text-red-500 px-1 py-0.5"
+                            title="Eliminar grupo"
+                          >
+                            🗑
+                          </button>
+                        </div>
+                      </div>
+                      {group.prospects.length > 0 ? (
+                        <div className="space-y-1 max-h-[200px] overflow-y-auto">
+                          {group.prospects.map((p, idx) => (
+                            <div key={p.id + '-' + idx} className="flex items-center gap-2 text-xs p-1.5 bg-gray-50 rounded">
+                              <span className="w-1.5 h-1.5 rounded-full bg-purple-400 flex-shrink-0" />
+                              <span className="truncate text-gray-700">{p.name}</span>
+                              {p.phone && <span className="text-gray-400 ml-auto flex-shrink-0">📞</span>}
+                              {p.website && <span className="text-yellow-500 flex-shrink-0">🌐</span>}
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-xs text-gray-400 italic">Guarda leads para agregarlos aquí</p>
+                      )}
+                    </CardContent>
+                  </Card>
+                ))}
 
                 {/* Existing leads on map */}
                 {leadsWithCoords.length > 0 && (
@@ -821,6 +1135,13 @@ export default function ProspectingPage() {
                               )}>
                                 {l.prospectScore}pts
                               </span>
+                              {l.digitalScore !== undefined && l.digitalScore > 0 && (
+                                <span className={cn('text-xs font-medium',
+                                  l.digitalScore < 50 ? 'text-orange-600' : 'text-green-600',
+                                )}>
+                                  📡{l.digitalScore}
+                                </span>
+                              )}
                             </div>
                           </div>
                         ))}
@@ -843,6 +1164,8 @@ export default function ProspectingPage() {
                   onMapMove={(center) => setMapCenter(center)}
                   onSaveProspect={handleSaveFromProspect}
                   searchRadius={searchRadius}
+                  onAuditLead={handleAuditLead}
+                  colorMode={colorMode}
                 />
               </div>
 
@@ -887,6 +1210,65 @@ export default function ProspectingPage() {
                             />
                           </div>
                           <span className="text-sm font-medium">{detailLead.prospectScore}</span>
+                        </div>
+                      </div>
+
+                      {/* Digital Audit */}
+                      <div>
+                        <div className="text-xs text-gray-500 mb-1">Presencia digital</div>
+                        {detailLead.digitalScore !== undefined && detailLead.digitalScore > 0 ? (
+                          <div className="space-y-2">
+                            <div className="flex items-center gap-2">
+                              <div className="flex-1 bg-gray-200 rounded-full h-2">
+                                <div
+                                  className={cn('h-2 rounded-full',
+                                    detailLead.digitalScore < 30 && 'bg-red-500',
+                                    detailLead.digitalScore >= 30 && detailLead.digitalScore < 50 && 'bg-orange-500',
+                                    detailLead.digitalScore >= 50 && 'bg-green-500',
+                                  )}
+                                  style={{ width: `${detailLead.digitalScore}%` }}
+                                />
+                              </div>
+                              <span className="text-sm font-medium">{detailLead.digitalScore}/100</span>
+                            </div>
+                            {detailLead.opportunityType && (
+                              <div className={cn(
+                                'inline-flex items-center px-2 py-1 rounded-full text-xs font-medium',
+                                detailLead.digitalScore >= 50
+                                  ? 'bg-green-100 text-green-700'
+                                  : 'bg-red-100 text-red-700'
+                              )}>
+                                {OPPORTUNITY_TYPE_LABELS[detailLead.opportunityType as keyof typeof OPPORTUNITY_TYPE_LABELS]?.label || detailLead.opportunityType.replace(/_/g, ' ')}
+                              </div>
+                            )}
+                            {detailLead.lastAuditAt && (
+                              <div className="text-xs text-gray-400">
+                                Auditado: {formatDate(detailLead.lastAuditAt)}
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="text-xs text-gray-400 italic">Sin auditar</div>
+                        )}
+                        <div className="flex gap-2 mt-2">
+                          {detailLead.website && (
+                            <button
+                              onClick={() => handleAuditLead(detailLead.id)}
+                              disabled={isAuditing}
+                              className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium text-orange-700 bg-orange-50 hover:bg-orange-100 rounded-lg transition-colors border border-orange-200 disabled:opacity-50"
+                            >
+                              {isAuditing ? '⏳ Auditando...' : '📡 Auditar digital'}
+                            </button>
+                          )}
+                          {detailLead.digitalScore !== undefined && detailLead.digitalScore > 0 && (
+                            <button
+                              onClick={() => handleGenerateProposal(detailLead.id)}
+                              disabled={isGeneratingProposal}
+                              className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium text-purple-700 bg-purple-50 hover:bg-purple-100 rounded-lg transition-colors border border-purple-200 disabled:opacity-50"
+                            >
+                              {isGeneratingProposal ? '⏳ Generando...' : '📄 Propuesta AI'}
+                            </button>
+                          )}
                         </div>
                       </div>
 
@@ -1001,7 +1383,7 @@ export default function ProspectingPage() {
                         <div className="text-xs font-medium text-gray-500 uppercase tracking-wider">Buscar info</div>
                         <div className="grid grid-cols-2 gap-2">
                           <a
-                            href={`https://www.google.com/search?q=${encodeURIComponent(detailLead.companyName + (detailLead.address ? ' ' + detailLead.address : ''))}`}
+                            href={`https://www.google.com/search?q=${encodeURIComponent(googleSearchQuery(detailLead.companyName))}`}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors border border-gray-200"
@@ -1009,7 +1391,7 @@ export default function ProspectingPage() {
                             🔍 Buscar en Google
                           </a>
                           <a
-                            href={`https://www.google.com/maps/search/${encodeURIComponent(detailLead.companyName + (detailLead.address ? ', ' + detailLead.address : ''))}`}
+                            href={`https://www.google.com/maps/search/${encodeURIComponent(detailLead.companyName + (searchCity ? ', ' + searchCity : detailLead.address ? ', ' + detailLead.address : ''))}`}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors border border-gray-200"
@@ -1267,7 +1649,7 @@ export default function ProspectingPage() {
                               <div className="flex items-center gap-1">
                                 <span className="text-xs text-gray-400">—</span>
                                 <a
-                                  href={`https://www.google.com/search?q=${encodeURIComponent(lead.companyName + ' sitio web')}`}
+                                  href={`https://www.google.com/search?q=${encodeURIComponent(googleSearchQuery(lead.companyName) + ' sitio web')}`}
                                   target="_blank"
                                   rel="noopener noreferrer"
                                   className="text-xs text-gray-400 hover:text-blue-600"
@@ -1299,7 +1681,7 @@ export default function ProspectingPage() {
                           <td className="px-3 py-3 text-right">
                             <div className="flex items-center justify-end gap-1">
                               <a
-                                href={`https://www.google.com/search?q=${encodeURIComponent(lead.companyName + (lead.address ? ' ' + lead.address : ''))}`}
+                                href={`https://www.google.com/search?q=${encodeURIComponent(googleSearchQuery(lead.companyName))}`}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="p-1 text-gray-400 hover:text-blue-600 rounded"
@@ -1310,7 +1692,7 @@ export default function ProspectingPage() {
                                 </svg>
                               </a>
                               <a
-                                href={`https://www.google.com/maps/search/${encodeURIComponent(lead.companyName + (lead.address ? ', ' + lead.address : ''))}`}
+                                href={`https://www.google.com/maps/search/${encodeURIComponent(lead.companyName + (searchCity ? ', ' + searchCity : lead.address ? ', ' + lead.address : ''))}`}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="p-1 text-gray-400 hover:text-green-600 rounded"
@@ -1914,6 +2296,39 @@ export default function ProspectingPage() {
               Escribí un mensaje arriba para ver la lista de leads
             </div>
           )}
+        </div>
+      </Modal>
+
+      {/* Group Creation Modal */}
+      <Modal
+        isOpen={isGroupModalOpen}
+        onClose={() => { setIsGroupModalOpen(false); setNewGroupTitle(''); }}
+        title="Crear grupo de prospección"
+        size="sm"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-gray-500">
+            Los negocios que guardes como lead se agregarán automáticamente a este grupo.
+          </p>
+          <Input
+            label="Nombre del grupo"
+            value={newGroupTitle}
+            onChange={(e) => setNewGroupTitle(e.target.value)}
+            placeholder="Ej: Restaurantes, Peluquerías..."
+            autoFocus
+          />
+          <div className="flex justify-end gap-3 pt-2">
+            <Button variant="outline" onClick={() => { setIsGroupModalOpen(false); setNewGroupTitle(''); }}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={() => handleCreateGroup(newGroupTitle)}
+              disabled={!newGroupTitle.trim()}
+              className="bg-purple-600 hover:bg-purple-700"
+            >
+              Crear grupo
+            </Button>
+          </div>
         </div>
       </Modal>
     </MainLayout>
