@@ -251,7 +251,7 @@ export const useClientsStore = create<ClientsState>((set, get) => ({
         status: c.status,
         notes: c.notes || '',
         tags: c.tags || [],
-        isActive: c.status === 'active',
+        isActive: !['inactive', 'lost'].includes(c.status),
         createdAt: c.created_at,
         updatedAt: c.updated_at,
       }));
@@ -276,7 +276,7 @@ export const useClientsStore = create<ClientsState>((set, get) => ({
         type: data.type || 'client',
         position: data.position,
         notes: data.notes,
-        status: data.status || (data.isActive ? 'active' : 'inactive'),
+        status: data.status || 'new',
         my_company_id: companyId,
         user_id: user?.id,
       })
