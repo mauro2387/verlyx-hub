@@ -50,7 +50,7 @@ export default function AIAssistantPage() {
     },
   ];
 
-  const { messages, sendMessage, status, clearError } = useChat({
+  const { messages, sendMessage, status, error: chatError, clearError } = useChat({
     transport: new DefaultChatTransport({
       api: '/api/ai/chat',
       body: { userId: user?.id },
@@ -177,8 +177,14 @@ export default function AIAssistantPage() {
               {hasError && (
                 <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
                   <p className="font-semibold mb-1">⚠️ Error al comunicarse con el asistente</p>
-                  <p>Verifica que OPENAI_API_KEY esté configurada en <code className="bg-amber-100 px-1 rounded">.env.local</code></p>
-                  <p className="mt-1 text-xs text-amber-600">Obtén tu API key en: platform.openai.com</p>
+                  {chatError ? (
+                    <p className="text-xs bg-amber-100 rounded p-2 mt-1 font-mono break-all">
+                      {chatError.message || String(chatError)}
+                    </p>
+                  ) : (
+                    <p>Verifica que OPENAI_API_KEY esté configurada en <code className="bg-amber-100 px-1 rounded">.env.local</code></p>
+                  )}
+                  <p className="mt-1 text-xs text-amber-600">Si el error persiste, verificá que tu API key sea válida en platform.openai.com</p>
                   <button onClick={() => clearError()} className="mt-2 text-xs text-indigo-600 hover:underline">Reintentar</button>
                 </div>
               )}

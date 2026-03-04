@@ -221,13 +221,23 @@ export const useClientsStore = create<ClientsState>((set, get) => ({
     isActive: null,
   },
   fetchClients: async () => {
+    const companyId = useCompanyStore.getState().selectedCompanyId;
     set({ isLoading: true });
     
-    // Use Supabase directly
-    const { data, error } = await db.contacts.getAll();
+    // Query contacts scoped by my_company_id (matching leads/opportunities pattern)
+    let query = supabase
+      .from('contacts')
+      .select('*')
+      .order('created_at', { ascending: false });
     
-    if (data && data.length > 0 && !error) {
-      const clients: Client[] = data.map(c => ({
+    if (companyId) {
+      query = query.eq('my_company_id', companyId);
+    }
+    
+    const { data, error } = await query;
+    
+    if (data && !error) {
+      const clients: Client[] = data.map((c: any) => ({
         id: c.id,
         name: `${c.first_name} ${c.last_name || ''}`.trim(),
         firstName: c.first_name,
@@ -247,28 +257,35 @@ export const useClientsStore = create<ClientsState>((set, get) => ({
       }));
       set({ clients, isLoading: false });
     } else {
-      // No data or error - show empty state
+      console.error('[Clients] Fetch error:', error);
       set({ clients: [], isLoading: false });
     }
   },
   addClient: async (data) => {
+    const companyId = useCompanyStore.getState().selectedCompanyId;
     const nameParts = data.name?.split(' ') || [];
-    const { data: newContact } = await db.contacts.create({
-      first_name: data.firstName || nameParts[0] || '',
-      last_name: data.lastName || nameParts.slice(1).join(' ') || '',
-      email: data.email,
-      phone: data.phone,
-      company: data.company || data.companyName,
-      type: data.type || 'individual',
-      position: data.position,
-      notes: data.notes,
-      status: data.isActive ? 'active' : 'inactive',
-    });
+    const { data: { user } } = await supabase.auth.getUser();
+    const { data: newContact } = await supabase
+      .from('contacts')
+      .insert({
+        first_name: data.firstName || nameParts[0] || '',
+        last_name: data.lastName || nameParts.slice(1).join(' ') || '',
+        email: data.email,
+        phone: data.phone,
+        company: data.company || data.companyName,
+        type: data.type || 'client',
+        position: data.position,
+        notes: data.notes,
+        status: data.status || (data.isActive ? 'active' : 'inactive'),
+        my_company_id: companyId,
+        user_id: user?.id,
+      })
+      .select()
+      .single();
     
     if (newContact) {
       get().fetchClients();
     } else {
-      // Fallback to local add
       const newClient: Client = {
         ...data,
         id: Date.now().toString(),
@@ -279,16 +296,27 @@ export const useClientsStore = create<ClientsState>((set, get) => ({
     }
   },
   updateClient: async (id, data) => {
-    const nameParts = data.name?.split(' ') || [];
-    await db.contacts.update(id, {
-      first_name: data.firstName || nameParts[0],
-      last_name: data.lastName || nameParts.slice(1).join(' '),
-      email: data.email,
-      phone: data.phone,
-      company: data.company || data.companyName,
-      notes: data.notes,
-      status: data.isActive ? 'active' : 'inactive',
-    });
+    // Build update payload — only include fields that were explicitly set
+    const updates: Record<string, unknown> = {};
+    if (data.firstName !== undefined) updates.first_name = data.firstName;
+    if (data.lastName !== undefined) updates.last_name = data.lastName;
+    if (data.name !== undefined) {
+      const parts = data.name.split(' ');
+      if (!data.firstName) updates.first_name = parts[0];
+      if (!data.lastName) updates.last_name = parts.slice(1).join(' ');
+    }
+    if (data.email !== undefined) updates.email = data.email;
+    if (data.phone !== undefined) updates.phone = data.phone;
+    if (data.company !== undefined || data.companyName !== undefined) updates.company = data.company || data.companyName;
+    if (data.position !== undefined) updates.position = data.position;
+    if (data.notes !== undefined) updates.notes = data.notes;
+    if (data.type !== undefined) updates.type = data.type;
+    if (data.tags !== undefined) updates.tags = data.tags;
+    // Allow explicit status changes (e.g., 'won' → 'active')
+    if (data.status !== undefined) updates.status = data.status;
+    else if (data.isActive !== undefined) updates.status = data.isActive ? 'active' : 'inactive';
+    
+    await supabase.from('contacts').update(updates).eq('id', id);
     get().fetchClients();
   },
   deleteClient: async (id) => {

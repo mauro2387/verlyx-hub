@@ -478,8 +478,13 @@ INSTRUCCIONES:
   } catch (error: unknown) {
     console.error('AI Chat Error:', error);
     const message = error instanceof Error ? error.message : 'Error del servidor';
+    
+    // Return a descriptive error so the frontend can display it
     return new Response(
-      JSON.stringify({ error: message }),
+      JSON.stringify({
+        error: message,
+        detail: error instanceof Error && error.cause ? String(error.cause) : undefined,
+      }),
       { status: 500, headers: { 'Content-Type': 'application/json' } }
     );
   }
