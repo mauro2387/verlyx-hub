@@ -3457,8 +3457,9 @@ export const useOpportunitiesStore = create<OpportunitiesState>((set, get) => ({
 
     if (error) {
       console.error('[Opportunities] Won execution failed:', error);
-      // Non-blocking: the stage change already succeeded, this is the lifecycle automation
-      toast.warning('Oportunidad ganada', 'Se marcó como ganada pero la automatización de cliente/proyecto falló. Creálo manualmente.');
+      // Show the actual error so the user can report it
+      const errorDetail = error.message || error.details || 'Error desconocido';
+      toast.error('Error en automatización', `No se pudo crear cliente/proyecto: ${errorDetail}`);
       return null;
     }
 

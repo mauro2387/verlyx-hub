@@ -1,13 +1,13 @@
 // Utilidades y helpers
 
-// Formatear moneda
+// Formatear moneda — usa Math.round para evitar errores de floating point
 export function formatCurrency(amount: number, currency: string = 'UYU'): string {
   return new Intl.NumberFormat('es-UY', {
     style: 'currency',
     currency,
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
-  }).format(amount);
+  }).format(Math.round(amount));
 }
 
 // Formatear fecha

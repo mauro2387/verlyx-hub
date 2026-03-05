@@ -4,6 +4,7 @@ import { useEffect, useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { MainLayout, PageHeader } from '@/components/layout';
 import { Button, Card, CardContent, Loading, Modal, Input, Textarea, Select, ConfirmDialog, StatCard, Badge, SearchInput, CompanyBadge } from '@/components/ui';
+import { WonWizard, WonWizardData } from '@/components/ui/WonWizard';
 import { useOpportunitiesStore, useClientsStore, useCompanyStore } from '@/lib/store';
 import { Opportunity, OpportunityStage, PaymentStructure } from '@/lib/types';
 import { opportunityStageColors, priorityColors, formatCurrency, cn } from '@/lib/utils';
@@ -17,7 +18,6 @@ interface OppFormData {
   description: string;
   stage: OpportunityStage;
   priority: string;
-  clientId: string;
   currency: string;
   needDetected: string;
   nextAction: string;
@@ -29,14 +29,8 @@ interface OppFormData {
   estimatedAmountMax: string;
   tentativeAmount: string;
   nextInteractionDate: string;
-  finalAmount: string;
-  finalCurrency: string;
-  paymentType: string;
-  startDate: string;
-  wonReason: string;
   lostReason: string;
   lostNote: string;
-  probability: string;
   source: string;
 }
 
@@ -45,7 +39,6 @@ const EMPTY_FORM: OppFormData = {
   description: '',
   stage: 'qualified',
   priority: 'medium',
-  clientId: '',
   currency: 'UYU',
   needDetected: '',
   nextAction: '',
@@ -57,14 +50,8 @@ const EMPTY_FORM: OppFormData = {
   estimatedAmountMax: '',
   tentativeAmount: '',
   nextInteractionDate: '',
-  finalAmount: '',
-  finalCurrency: 'UYU',
-  paymentType: '',
-  startDate: '',
-  wonReason: '',
   lostReason: '',
   lostNote: '',
-  probability: '20',
   source: '',
 };
 
@@ -97,20 +84,9 @@ export default function DealsPage() {
   const [filterPriority, setFilterPriority] = useState<string>('');
 
   // Stage transition dialogs
-  const [wonDialogOpen, setWonDialogOpen] = useState(false);
+  const [wonWizardOpen, setWonWizardOpen] = useState(false);
   const [lostDialogOpen, setLostDialogOpen] = useState(false);
   const [stageTransitionOpp, setStageTransitionOpp] = useState<Opportunity | null>(null);
-  const [wonFormData, setWonFormData] = useState({
-    finalAmount: '',
-    finalCurrency: 'UYU',
-    paymentType: '' as string,
-    paymentStructure: '' as '' | 'one_time' | 'recurring' | 'dev_plus_maintenance',
-    devAmount: '',
-    recurringAmount: '',
-    recurringFrequency: 'monthly' as string,
-    startDate: '',
-    wonReason: '',
-  });
   const [lostFormData, setLostFormData] = useState({ lostReason: '', lostNote: '' });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [wonSuccessData, setWonSuccessData] = useState<{
@@ -186,9 +162,8 @@ export default function DealsPage() {
       setFormData({
         title: opp.title,
         description: opp.description || '',
-        stage: opp.stage,
+        stage: opp.stage === 'won' || opp.stage === 'lost' ? opp.stage : opp.stage,
         priority: opp.priority || 'medium',
-        clientId: opp.clientId || '',
         currency: opp.currency || 'UYU',
         needDetected: opp.needDetected || '',
         nextAction: opp.nextAction || '',
@@ -200,14 +175,8 @@ export default function DealsPage() {
         estimatedAmountMax: opp.estimatedAmountMax?.toString() || '',
         tentativeAmount: opp.tentativeAmount?.toString() || '',
         nextInteractionDate: opp.nextInteractionDate?.split('T')[0] || '',
-        finalAmount: opp.finalAmount?.toString() || '',
-        finalCurrency: opp.finalCurrency || 'UYU',
-        paymentType: opp.paymentType || '',
-        startDate: opp.startDate?.split('T')[0] || '',
-        wonReason: opp.wonReason || '',
         lostReason: opp.lostReason || '',
         lostNote: opp.lostNote || '',
-        probability: opp.probability?.toString() || '20',
         source: opp.source || '',
       });
     } else {
@@ -222,12 +191,14 @@ export default function DealsPage() {
     if (!formData.title.trim()) return;
     setIsSubmitting(true);
 
+    // If user selected 'won', save as 'negotiation' first, then trigger wizard
+    const saveStage = formData.stage === 'won' ? 'negotiation' : formData.stage;
+
     const oppData: Partial<Opportunity> = {
       title: formData.title,
       description: formData.description || null,
-      stage: formData.stage,
+      stage: saveStage as OpportunityStage,
       priority: formData.priority as Opportunity['priority'],
-      clientId: formData.clientId || null,
       currency: formData.currency,
       needDetected: formData.needDetected || null,
       nextAction: formData.nextAction || 'Definir próximo paso',
@@ -239,24 +210,28 @@ export default function DealsPage() {
       estimatedAmountMax: formData.estimatedAmountMax ? parseFloat(formData.estimatedAmountMax) : null,
       tentativeAmount: formData.tentativeAmount ? parseFloat(formData.tentativeAmount) : null,
       nextInteractionDate: formData.nextInteractionDate || null,
-      finalAmount: formData.finalAmount ? parseFloat(formData.finalAmount) : null,
-      finalCurrency: formData.finalCurrency || null,
-      paymentType: (formData.paymentType || null) as Opportunity['paymentType'],
-      startDate: formData.startDate || null,
-      wonReason: formData.wonReason || null,
       lostReason: formData.lostReason || null,
       lostNote: formData.lostNote || null,
       source: formData.source || null,
-      isActive: !['won', 'lost'].includes(formData.stage),
+      isActive: !['lost'].includes(formData.stage),
     };
 
+    let savedOpp: Opportunity | null = null;
     if (editingOpp) {
       await updateOpportunity(editingOpp.id, oppData);
+      savedOpp = { ...editingOpp, ...oppData } as Opportunity;
     } else {
-      await createOpportunity(oppData);
+      savedOpp = await createOpportunity(oppData);
     }
+
     setIsSubmitting(false);
     setIsModalOpen(false);
+
+    // If user intended 'won', open the wizard for the saved opp
+    if (formData.stage === 'won' && savedOpp) {
+      setStageTransitionOpp(savedOpp);
+      setWonWizardOpen(true);
+    }
   };
 
   const handleDeleteClick = (opp: Opportunity) => {
@@ -284,21 +259,10 @@ export default function DealsPage() {
     const opp = opportunities.find(o => o.id === oppId);
     if (!opp || opp.stage === newStage) return;
 
-    // WON requires mandatory fields — show dialog
+    // WON requires the wizard — open it
     if (newStage === 'won') {
       setStageTransitionOpp(opp);
-      setWonFormData({
-        finalAmount: opp.tentativeAmount?.toString() || opp.estimatedAmountMax?.toString() || '',
-        finalCurrency: opp.currency || 'UYU',
-        paymentType: '',
-        paymentStructure: '',
-        devAmount: '',
-        recurringAmount: '',
-        recurringFrequency: 'monthly',
-        startDate: new Date().toISOString().split('T')[0],
-        wonReason: '',
-      });
-      setWonDialogOpen(true);
+      setWonWizardOpen(true);
       return;
     }
 
@@ -329,70 +293,88 @@ export default function DealsPage() {
     await changeStage(oppId, newStage, {});
   };
 
-  const handleWonConfirm = async () => {
+  const handleWizardConfirm = async (wizardData: WonWizardData) => {
     if (!stageTransitionOpp) return;
-    if (!wonFormData.paymentStructure) return;
 
-    // Validate amounts based on payment structure
-    if (wonFormData.paymentStructure === 'one_time') {
-      if (!wonFormData.finalAmount || parseFloat(wonFormData.finalAmount) <= 0) return;
-    } else if (wonFormData.paymentStructure === 'recurring') {
-      if (!wonFormData.recurringAmount || parseFloat(wonFormData.recurringAmount) <= 0) return;
-    } else if (wonFormData.paymentStructure === 'dev_plus_maintenance') {
-      if (!wonFormData.devAmount || parseFloat(wonFormData.devAmount) <= 0) return;
-      if (!wonFormData.recurringAmount || parseFloat(wonFormData.recurringAmount) <= 0) return;
+    // Calculate final amount based on payment structure
+    let finalAmount = 0;
+    switch (wizardData.paymentStructure) {
+      case 'one_time': finalAmount = parseFloat(wizardData.totalAmount) || 0; break;
+      case 'recurring': finalAmount = parseFloat(wizardData.recurringAmount) || 0; break;
+      case 'dev_plus_maintenance': finalAmount = (parseFloat(wizardData.devAmount) || 0) + (parseFloat(wizardData.maintAmount) || 0); break;
+      case 'split_40_60':
+      case 'split_50_50': finalAmount = parseFloat(wizardData.splitTotalAmount) || 0; break;
+      case 'milestone_custom': finalAmount = parseFloat(wizardData.milestoneTotalAmount) || 0; break;
     }
 
-    // Calculate total finalAmount
-    let totalAmount = 0;
-    if (wonFormData.paymentStructure === 'one_time') {
-      totalAmount = parseFloat(wonFormData.finalAmount);
-    } else if (wonFormData.paymentStructure === 'recurring') {
-      totalAmount = parseFloat(wonFormData.recurringAmount);
-    } else if (wonFormData.paymentStructure === 'dev_plus_maintenance') {
-      totalAmount = parseFloat(wonFormData.devAmount) + parseFloat(wonFormData.recurringAmount);
-    }
-
-    // Map structure to legacy payment_type for column compatibility
+    // Map structure to legacy payment_type column
     const paymentTypeMap: Record<string, string> = {
       one_time: 'one_time',
-      recurring: wonFormData.recurringFrequency || 'monthly',
+      recurring: wizardData.recurringFrequency || 'monthly',
       dev_plus_maintenance: 'custom',
+      split_40_60: 'milestone',
+      split_50_50: 'milestone',
+      milestone_custom: 'milestone',
     };
 
     setIsSubmitting(true);
-    const success = await changeStage(stageTransitionOpp.id, 'won', {
-      final_amount: totalAmount,
-      final_currency: wonFormData.finalCurrency || 'UYU',
-      payment_type: paymentTypeMap[wonFormData.paymentStructure] || 'one_time',
-      start_date: wonFormData.startDate || new Date().toISOString().split('T')[0],
-      won_reason: wonFormData.wonReason || null,
-      custom_fields: {
-        ...(stageTransitionOpp.customFields || {}),
-        payment_structure: wonFormData.paymentStructure,
-        dev_amount: wonFormData.paymentStructure === 'dev_plus_maintenance' ? parseFloat(wonFormData.devAmount) : 0,
-        recurring_amount: wonFormData.paymentStructure !== 'one_time' ? parseFloat(wonFormData.recurringAmount) : 0,
-        recurring_frequency: wonFormData.recurringFrequency || 'monthly',
+
+    // Build custom_fields with all wizard data for the RPC
+    const customFields = {
+      ...(stageTransitionOpp.customFields || {}),
+      payment_structure: wizardData.paymentStructure,
+      dev_split_mode: wizardData.devSplitMode || null,
+      client_data: {
+        name: wizardData.clientName,
+        email: wizardData.clientEmail,
+        phone: wizardData.clientPhone,
+        company: wizardData.clientCompany,
+        position: wizardData.clientPosition,
+        address: wizardData.clientAddress,
       },
+      project_data: {
+        name: wizardData.projectName,
+        description: wizardData.projectDescription,
+        type: wizardData.projectType,
+        tech_stack: wizardData.projectTechStack,
+        due_date: wizardData.projectDueDate,
+        milestones: wizardData.projectMilestones,
+      },
+      dev_amount: wizardData.paymentStructure === 'dev_plus_maintenance' ? parseFloat(wizardData.devAmount) || 0 : 0,
+      recurring_amount: parseFloat(wizardData.recurringAmount) || parseFloat(wizardData.maintAmount) || 0,
+      recurring_frequency: wizardData.recurringFrequency || wizardData.maintFrequency || 'monthly',
+      split_total: parseFloat(wizardData.splitTotalAmount) || 0,
+      milestones_data: wizardData.milestones,
+    };
+
+    const success = await changeStage(stageTransitionOpp.id, 'won', {
+      final_amount: Math.round(finalAmount),
+      final_currency: wizardData.currency || 'UYU',
+      payment_type: paymentTypeMap[wizardData.paymentStructure] || 'one_time',
+      start_date: wizardData.startDate || new Date().toISOString().split('T')[0],
+      won_reason: wizardData.wonReason || null,
+      custom_fields: customFields,
     });
 
     if (success) {
-      // Execute lifecycle automation: create client, project, incomes, schedules
+      // Execute the won lifecycle (create client, project, incomes)
       const result = await useOpportunitiesStore.getState().executeOpportunityWon(stageTransitionOpp.id);
-      setWonSuccessData({
-        oppTitle: stageTransitionOpp.title,
-        projectId: result?.projectId,
-        clientId: result?.clientId,
-        incomeId: result?.incomeId,
-        scheduleId: result?.scheduleId,
-        paymentStructure: result?.paymentStructure as PaymentStructure | undefined,
-        amount: totalAmount,
-        currency: wonFormData.finalCurrency || 'UYU',
-      });
+      if (result) {
+        setWonSuccessData({
+          oppTitle: stageTransitionOpp.title,
+          projectId: result.projectId,
+          clientId: result.clientId,
+          incomeId: result.incomeId,
+          scheduleId: result.scheduleId,
+          paymentStructure: result.paymentStructure as PaymentStructure | undefined,
+          amount: Math.round(finalAmount),
+          currency: wizardData.currency || 'UYU',
+        });
+      }
     }
 
     setIsSubmitting(false);
-    setWonDialogOpen(false);
+    setWonWizardOpen(false);
     setStageTransitionOpp(null);
   };
 
@@ -972,19 +954,9 @@ export default function DealsPage() {
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
               </svg>
-              Cliente y Origen
+              Origen
             </h3>
-            <div className="grid grid-cols-2 gap-4">
-              <Select
-                label="Cliente"
-                placeholder="Seleccionar cliente..."
-                value={formData.clientId}
-                onChange={(e) => setFormData({ ...formData, clientId: e.target.value })}
-                options={[
-                  { value: '', label: 'Sin cliente' },
-                  ...clients.map((c) => ({ value: c.id, label: c.name })),
-                ]}
-              />
+            <div className="grid grid-cols-1 gap-4">
               <Select
                 label="Origen"
                 placeholder="¿Cómo llegó?"
@@ -1137,62 +1109,14 @@ export default function DealsPage() {
             </div>
           )}
 
-          {/* Stage-specific: Won */}
+          {/* Stage-specific: Won — Wizard will open after save */}
           {formData.stage === 'won' && (
-            <div>
-              <h3 className="text-sm font-semibold text-green-700 mb-3 flex items-center gap-2">
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                Cierre Ganado
-              </h3>
-              <div className="space-y-4">
-                <div className="grid grid-cols-3 gap-4">
-                  <Input
-                    label="Monto Final"
-                    type="number"
-                    placeholder="0"
-                    value={formData.finalAmount}
-                    onChange={(e) => setFormData({ ...formData, finalAmount: e.target.value })}
-                  />
-                  <Select
-                    label="Moneda Final"
-                    value={formData.finalCurrency}
-                    onChange={(e) => setFormData({ ...formData, finalCurrency: e.target.value })}
-                    options={[
-                      { value: 'UYU', label: 'UYU ($)' },
-                      { value: 'USD', label: 'USD ($)' },
-                      { value: 'EUR', label: 'EUR (€)' },
-                    ]}
-                  />
-                  <Select
-                    label="Tipo de Pago"
-                    value={formData.paymentType}
-                    onChange={(e) => setFormData({ ...formData, paymentType: e.target.value })}
-                    options={[
-                      { value: '', label: 'Seleccionar...' },
-                      { value: 'one_time', label: 'Pago Único' },
-                      { value: 'monthly', label: 'Mensual' },
-                      { value: 'quarterly', label: 'Trimestral' },
-                      { value: 'annual', label: 'Anual' },
-                      { value: 'milestone', label: 'Por Hito' },
-                      { value: 'custom', label: 'Personalizado' },
-                    ]}
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <Input
-                    label="Fecha de Inicio"
-                    type="date"
-                    value={formData.startDate}
-                    onChange={(e) => setFormData({ ...formData, startDate: e.target.value })}
-                  />
-                  <Input
-                    label="Razón de Éxito"
-                    placeholder="¿Por qué se ganó?"
-                    value={formData.wonReason}
-                    onChange={(e) => setFormData({ ...formData, wonReason: e.target.value })}
-                  />
+            <div className="p-4 bg-green-50 rounded-xl border border-green-200">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-green-100 flex items-center justify-center text-xl">🎉</div>
+                <div>
+                  <h4 className="font-semibold text-green-800">Asistente de Cierre</h4>
+                  <p className="text-sm text-green-700">Al guardar, se abrirá el asistente para completar los datos del cliente, proyecto y plan de cobro.</p>
                 </div>
               </div>
             </div>
@@ -1236,19 +1160,6 @@ export default function DealsPage() {
             </div>
           )}
 
-          {/* Probability */}
-          <div>
-            <Input
-              label="Probabilidad de Cierre (%)"
-              type="number"
-              placeholder="0-100"
-              min="0"
-              max="100"
-              value={formData.probability}
-              onChange={(e) => setFormData({ ...formData, probability: e.target.value })}
-            />
-          </div>
-
           <div className="flex justify-end gap-3 pt-4 border-t">
             <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)}>
               Cancelar
@@ -1270,255 +1181,20 @@ export default function DealsPage() {
         variant="danger"
       />
 
-      {/* WON Stage Transition Dialog */}
-      <Modal
-        isOpen={wonDialogOpen}
-        onClose={() => { setWonDialogOpen(false); setStageTransitionOpp(null); }}
-        title="Marcar como Ganada"
-        size="lg"
-      >
-        <div className="space-y-4">
-          <div className="p-4 bg-green-50 rounded-lg border border-green-200">
-            <p className="text-sm text-green-800 font-medium">
-              Al marcar como ganada se ejecutará automáticamente:
-            </p>
-            <ul className="mt-2 text-sm text-green-700 space-y-1">
-              <li className="flex items-center gap-2">
-                <svg className="w-4 h-4 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
-                Actualizar contacto como cliente
-              </li>
-              <li className="flex items-center gap-2">
-                <svg className="w-4 h-4 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
-                Crear proyecto automáticamente
-              </li>
-              <li className="flex items-center gap-2">
-                <svg className="w-4 h-4 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
-                Crear tarea de onboarding
-              </li>
-              <li className="flex items-center gap-2">
-                <svg className="w-4 h-4 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
-                Registrar ingresos y plan de cobro
-              </li>
-            </ul>
-          </div>
-
-          {/* === PAYMENT STRUCTURE SELECTOR === */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Estructura de Pago *</label>
-            <div className="grid grid-cols-3 gap-3">
-              {/* Pago Único */}
-              <button
-                type="button"
-                onClick={() => setWonFormData({ ...wonFormData, paymentStructure: 'one_time', paymentType: 'one_time' })}
-                className={`p-3 rounded-lg border-2 text-left transition-all ${
-                  wonFormData.paymentStructure === 'one_time'
-                    ? 'border-green-500 bg-green-50 ring-1 ring-green-500'
-                    : 'border-gray-200 hover:border-gray-300'
-                }`}
-              >
-                <div className="flex items-center gap-2 mb-1">
-                  <svg className="w-5 h-5 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                  <span className="font-medium text-sm">Pago Único</span>
-                </div>
-                <p className="text-xs text-gray-500">Un solo cobro por el servicio</p>
-              </button>
-
-              {/* Recurrente */}
-              <button
-                type="button"
-                onClick={() => setWonFormData({ ...wonFormData, paymentStructure: 'recurring', paymentType: 'monthly' })}
-                className={`p-3 rounded-lg border-2 text-left transition-all ${
-                  wonFormData.paymentStructure === 'recurring'
-                    ? 'border-blue-500 bg-blue-50 ring-1 ring-blue-500'
-                    : 'border-gray-200 hover:border-gray-300'
-                }`}
-              >
-                <div className="flex items-center gap-2 mb-1">
-                  <svg className="w-5 h-5 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
-                  <span className="font-medium text-sm">Recurrente</span>
-                </div>
-                <p className="text-xs text-gray-500">Pago periódico (mensual, etc.)</p>
-              </button>
-
-              {/* Desarrollo + Mantenimiento */}
-              <button
-                type="button"
-                onClick={() => setWonFormData({ ...wonFormData, paymentStructure: 'dev_plus_maintenance', paymentType: 'custom' })}
-                className={`p-3 rounded-lg border-2 text-left transition-all ${
-                  wonFormData.paymentStructure === 'dev_plus_maintenance'
-                    ? 'border-purple-500 bg-purple-50 ring-1 ring-purple-500'
-                    : 'border-gray-200 hover:border-gray-300'
-                }`}
-              >
-                <div className="flex items-center gap-2 mb-1">
-                  <svg className="w-5 h-5 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" /></svg>
-                  <span className="font-medium text-sm">Dev + Mantenimiento</span>
-                </div>
-                <p className="text-xs text-gray-500">Cobro por desarrollo + mensualidad</p>
-              </button>
-            </div>
-          </div>
-
-          {/* === CURRENCY & DATE (always shown) === */}
-          <div className="grid grid-cols-2 gap-4">
-            <Select
-              label="Moneda *"
-              value={wonFormData.finalCurrency}
-              onChange={(e) => setWonFormData({ ...wonFormData, finalCurrency: e.target.value })}
-              options={[
-                { value: 'UYU', label: 'UYU ($)' },
-                { value: 'USD', label: 'USD ($)' },
-                { value: 'EUR', label: 'EUR (€)' },
-              ]}
-            />
-            <Input
-              label="Fecha de Inicio *"
-              type="date"
-              value={wonFormData.startDate}
-              onChange={(e) => setWonFormData({ ...wonFormData, startDate: e.target.value })}
-            />
-          </div>
-
-          {/* === ONE-TIME: Single amount === */}
-          {wonFormData.paymentStructure === 'one_time' && (
-            <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
-              <Input
-                label="Monto Total *"
-                type="number"
-                placeholder="0"
-                value={wonFormData.finalAmount}
-                onChange={(e) => setWonFormData({ ...wonFormData, finalAmount: e.target.value })}
-              />
-            </div>
-          )}
-
-          {/* === RECURRING: Amount + frequency === */}
-          {wonFormData.paymentStructure === 'recurring' && (
-            <div className="p-4 bg-blue-50 rounded-lg border border-blue-200 space-y-3">
-              <h4 className="text-sm font-medium text-blue-800">Pago Recurrente</h4>
-              <div className="grid grid-cols-2 gap-4">
-                <Input
-                  label="Monto por Período *"
-                  type="number"
-                  placeholder="0"
-                  value={wonFormData.recurringAmount}
-                  onChange={(e) => setWonFormData({ ...wonFormData, recurringAmount: e.target.value })}
-                />
-                <Select
-                  label="Frecuencia *"
-                  value={wonFormData.recurringFrequency}
-                  onChange={(e) => setWonFormData({ ...wonFormData, recurringFrequency: e.target.value })}
-                  options={[
-                    { value: 'monthly', label: 'Mensual' },
-                    { value: 'quarterly', label: 'Trimestral' },
-                    { value: 'semi_annual', label: 'Semestral' },
-                    { value: 'annual', label: 'Anual' },
-                  ]}
-                />
-              </div>
-              <p className="text-xs text-blue-600">
-                Se generarán ingresos pendientes automáticamente cada período. Recibirás alertas si hay pagos vencidos.
-              </p>
-            </div>
-          )}
-
-          {/* === DEV + MAINTENANCE: Two amounts === */}
-          {wonFormData.paymentStructure === 'dev_plus_maintenance' && (
-            <div className="space-y-3">
-              {/* Development fee */}
-              <div className="p-4 bg-amber-50 rounded-lg border border-amber-200 space-y-3">
-                <h4 className="text-sm font-medium text-amber-800 flex items-center gap-2">
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" /></svg>
-                  Cobro por Desarrollo (único)
-                </h4>
-                <Input
-                  label="Monto de Desarrollo *"
-                  type="number"
-                  placeholder="0"
-                  value={wonFormData.devAmount}
-                  onChange={(e) => setWonFormData({ ...wonFormData, devAmount: e.target.value })}
-                />
-                <p className="text-xs text-amber-600">
-                  Cobro único por el desarrollo del proyecto.
-                </p>
-              </div>
-
-              {/* Recurring maintenance */}
-              <div className="p-4 bg-purple-50 rounded-lg border border-purple-200 space-y-3">
-                <h4 className="text-sm font-medium text-purple-800 flex items-center gap-2">
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
-                  Mensualidad / Mantenimiento (recurrente)
-                </h4>
-                <div className="grid grid-cols-2 gap-4">
-                  <Input
-                    label="Monto Mensual *"
-                    type="number"
-                    placeholder="0"
-                    value={wonFormData.recurringAmount}
-                    onChange={(e) => setWonFormData({ ...wonFormData, recurringAmount: e.target.value })}
-                  />
-                  <Select
-                    label="Frecuencia *"
-                    value={wonFormData.recurringFrequency}
-                    onChange={(e) => setWonFormData({ ...wonFormData, recurringFrequency: e.target.value })}
-                    options={[
-                      { value: 'monthly', label: 'Mensual' },
-                      { value: 'quarterly', label: 'Trimestral' },
-                      { value: 'semi_annual', label: 'Semestral' },
-                      { value: 'annual', label: 'Anual' },
-                    ]}
-                  />
-                </div>
-                <p className="text-xs text-purple-600">
-                  Se generarán ingresos pendientes automáticamente. Recibirás alertas si hay pagos vencidos.
-                </p>
-              </div>
-
-              {/* Summary */}
-              {wonFormData.devAmount && wonFormData.recurringAmount && (
-                <div className="p-3 bg-gray-100 rounded-lg border border-gray-200">
-                  <p className="text-sm text-gray-700 font-medium">Resumen del cobro:</p>
-                  <div className="mt-1 text-sm text-gray-600 space-y-1">
-                    <p>Desarrollo: {wonFormData.finalCurrency} {parseFloat(wonFormData.devAmount).toLocaleString()}</p>
-                    <p>Mantenimiento: {wonFormData.finalCurrency} {parseFloat(wonFormData.recurringAmount).toLocaleString()} / {
-                      wonFormData.recurringFrequency === 'monthly' ? 'mes' :
-                      wonFormData.recurringFrequency === 'quarterly' ? 'trimestre' :
-                      wonFormData.recurringFrequency === 'semi_annual' ? 'semestre' : 'año'
-                    }</p>
-                    <p className="font-semibold text-gray-800 pt-1 border-t">
-                      Total inicial: {wonFormData.finalCurrency} {(parseFloat(wonFormData.devAmount) + parseFloat(wonFormData.recurringAmount)).toLocaleString()}
-                    </p>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          <Input
-            label="Razón de Éxito"
-            placeholder="¿Por qué se ganó?"
-            value={wonFormData.wonReason}
-            onChange={(e) => setWonFormData({ ...wonFormData, wonReason: e.target.value })}
-          />
-
-          <div className="flex justify-end gap-3 pt-4 border-t">
-            <Button variant="outline" onClick={() => { setWonDialogOpen(false); setStageTransitionOpp(null); }}>
-              Cancelar
-            </Button>
-            <Button
-              onClick={handleWonConfirm}
-              disabled={isSubmitting || !wonFormData.paymentStructure || (
-                wonFormData.paymentStructure === 'one_time' ? !wonFormData.finalAmount :
-                wonFormData.paymentStructure === 'recurring' ? !wonFormData.recurringAmount :
-                !wonFormData.devAmount || !wonFormData.recurringAmount
-              )}
-              className="bg-green-600 hover:bg-green-700 text-white"
-            >
-              {isSubmitting ? 'Procesando...' : 'Confirmar Ganada'}
-            </Button>
-          </div>
-        </div>
-      </Modal>
+      {/* WON Wizard */}
+      <WonWizard
+        isOpen={wonWizardOpen}
+        oppTitle={stageTransitionOpp?.title || ''}
+        prefill={{
+          clientName: stageTransitionOpp?.clientId ? getClientName(stageTransitionOpp.clientId) : '',
+          tentativeAmount: stageTransitionOpp?.tentativeAmount || undefined,
+          estimatedAmountMax: stageTransitionOpp?.estimatedAmountMax || undefined,
+          currency: stageTransitionOpp?.currency || 'UYU',
+          proposedService: stageTransitionOpp?.proposedService || undefined,
+        }}
+        onConfirm={handleWizardConfirm}
+        onCancel={() => { setWonWizardOpen(false); setStageTransitionOpp(null); }}
+      />
 
       {/* LOST Stage Transition Dialog */}
       <Modal

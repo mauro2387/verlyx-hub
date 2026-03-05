@@ -285,7 +285,7 @@ export interface Income {
   updatedAt: string;
 }
 
-export type PaymentStructure = 'one_time' | 'recurring' | 'dev_plus_maintenance';
+export type PaymentStructure = 'one_time' | 'recurring' | 'dev_plus_maintenance' | 'split_40_60' | 'split_50_50' | 'milestone_custom';
 
 export interface RecurringPaymentSchedule {
   id: string;
