@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { MainLayout, PageHeader } from '@/components/layout';
 import { Button, Card, CardContent, Badge, ProgressBar, Loading, ConfirmDialog, Tag } from '@/components/ui';
-import { useProjectsStore, useClientsStore, useTasksStore } from '@/lib/store';
+import { useProjectsStore, useClientsStore, useTasksStore, useCompanyStore } from '@/lib/store';
 import { projectStatusColors, priorityColors, formatCurrency, formatDate, taskStatusColors } from '@/lib/utils';
 import ProjectTimeline from '@/components/ui/ProjectTimeline';
 import ProjectAIAssistant from '@/components/ui/ProjectAIAssistant';
@@ -53,6 +53,7 @@ export default function ProjectDetailPage() {
   const { projects, fetchProjects, getProjectById, deleteProject, updateProject } = useProjectsStore();
   const { clients, fetchClients } = useClientsStore();
   const { tasks, fetchTasks } = useTasksStore();
+  const { companies, fetchCompanies } = useCompanyStore();
 
   const [activeTab, setActiveTab] = useState<'overview' | 'timeline' | 'tasks' | 'finances'>('overview');
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -67,6 +68,7 @@ export default function ProjectDetailPage() {
     fetchProjects();
     fetchClients();
     fetchTasks();
+    fetchCompanies();
     supabase.auth.getUser().then(({ data }) => {
       if (data.user) setUserId(data.user.id);
     });
@@ -103,6 +105,8 @@ export default function ProjectDetailPage() {
   const project = getProjectById(projectId);
   const projectTasks = tasks.filter(t => t.projectId === projectId);
   const client = clients.find(c => c.id === project?.clientId);
+  const company = companies.find(c => c.id === project?.myCompanyId);
+  const isInternalProject = !project?.clientId;
 
   const handleDelete = () => {
     deleteProject(projectId);
@@ -267,6 +271,16 @@ export default function ProjectDetailPage() {
       <Card className="mb-6">
         <CardContent>
           <div className="flex flex-wrap items-center gap-4">
+            {/* Project type badge */}
+            {isInternalProject ? (
+              <span className="inline-flex items-center gap-1 px-3 py-1 text-sm font-medium rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                🏢 Proyecto Interno
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 px-3 py-1 text-sm font-medium rounded-full bg-blue-50 text-blue-700 border border-blue-200">
+                👤 Proyecto de Cliente
+              </span>
+            )}
             <div className="flex items-center gap-2">
               <span className="text-sm text-gray-500">Estado:</span>
               <span className={`px-3 py-1 text-sm font-medium rounded-full ${projectStatusColors[project.status]?.bg} ${projectStatusColors[project.status]?.text}`}>
@@ -283,6 +297,12 @@ export default function ProjectDetailPage() {
               <div className="flex items-center gap-2">
                 <span className="text-sm text-gray-500">Cliente:</span>
                 <span className="text-sm font-medium text-gray-900">{client.name}</span>
+              </div>
+            )}
+            {company && (
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-gray-500">Empresa:</span>
+                <span className="text-sm font-medium text-gray-900">{company.name}</span>
               </div>
             )}
             <div className="ml-auto flex items-center gap-3">
@@ -367,6 +387,8 @@ export default function ProjectDetailPage() {
                       <div><span className="text-xs text-gray-400">Entrega</span><p className="text-sm font-medium text-gray-900">{formatDate(project.dueDate || project.endDate)}</p></div>
                       <div><span className="text-xs text-gray-400">Presupuesto</span><p className="text-sm font-medium text-gray-900">{formatCurrency(project.budget || 0)}</p></div>
                       <div><span className="text-xs text-gray-400">Hitos</span><p className="text-sm font-medium text-gray-900">{milestones.filter(m => m.status === 'completed').length} / {milestones.length}</p></div>
+                      {client && <div><span className="text-xs text-gray-400">Cliente</span><p className="text-sm font-medium text-gray-900">{client.name}</p></div>}
+                      {company && <div><span className="text-xs text-gray-400">Empresa</span><p className="text-sm font-medium text-gray-900">{company.name}</p></div>}
                     </div>
                     {project.tags && project.tags.length > 0 && (
                       <div className="flex flex-wrap gap-1.5 pt-3 border-t border-gray-100">

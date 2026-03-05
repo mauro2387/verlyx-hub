@@ -4,22 +4,34 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { MainLayout, PageHeader } from '@/components/layout';
 import { Button, Card, SearchInput, Select, Badge, ProgressBar, EmptyState, Loading, ConfirmDialog, CompanyBadge } from '@/components/ui';
-import { useProjectsStore, useClientsStore } from '@/lib/store';
+import { useProjectsStore, useClientsStore, useCompanyStore } from '@/lib/store';
 import { projectStatusColors, priorityColors, formatCurrency, formatDate } from '@/lib/utils';
 import { Project } from '@/lib/types';
 
 export default function ProjectsPage() {
   const { projects, isLoading, fetchProjects, deleteProject, filter, setFilter, getFilteredProjects } = useProjectsStore();
   const { clients, fetchClients } = useClientsStore();
+  const { companies, fetchCompanies } = useCompanyStore();
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
+  const [projectTypeFilter, setProjectTypeFilter] = useState<string>('');
 
   useEffect(() => {
     fetchProjects();
     fetchClients();
-  }, [fetchProjects, fetchClients]);
+    fetchCompanies();
+  }, [fetchProjects, fetchClients, fetchCompanies]);
 
-  const filteredProjects = getFilteredProjects();
+  const filteredProjects = getFilteredProjects().filter(p => {
+    if (projectTypeFilter === 'client') return !!p.clientId;
+    if (projectTypeFilter === 'internal') return !p.clientId;
+    return true;
+  });
+
+  // Stats
+  const activeCount = projects.filter(p => ['in_progress', 'review'].includes(p.status)).length;
+  const clientCount = projects.filter(p => !!p.clientId).length;
+  const internalCount = projects.filter(p => !p.clientId).length;
 
   const handleDeleteClick = (project: Project) => {
     setProjectToDelete(project);
@@ -35,7 +47,7 @@ export default function ProjectsPage() {
   };
 
   const getClientName = (clientId: string | null | undefined) => {
-    if (!clientId) return 'Sin cliente';
+    if (!clientId) return null;
     return clients.find(c => c.id === clientId)?.name || 'Cliente';
   };
 
@@ -51,7 +63,7 @@ export default function ProjectsPage() {
     <MainLayout>
       <PageHeader
         title="Proyectos"
-        description={`${projects.length} proyectos en total`}
+        description={`${projects.length} proyectos — ${activeCount} activos`}
         actions={
           <Link href="/projects/new">
             <Button>
@@ -64,10 +76,32 @@ export default function ProjectsPage() {
         }
       />
 
+      {/* Quick Stats */}
+      {projects.length > 0 && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+          <Card className="p-4 text-center">
+            <p className="text-2xl font-bold text-gray-900">{projects.length}</p>
+            <p className="text-xs text-gray-500">Total</p>
+          </Card>
+          <Card className="p-4 text-center">
+            <p className="text-2xl font-bold text-indigo-600">{activeCount}</p>
+            <p className="text-xs text-gray-500">Activos</p>
+          </Card>
+          <Card className="p-4 text-center">
+            <p className="text-2xl font-bold text-blue-600">{clientCount}</p>
+            <p className="text-xs text-gray-500">De Clientes</p>
+          </Card>
+          <Card className="p-4 text-center">
+            <p className="text-2xl font-bold text-emerald-600">{internalCount}</p>
+            <p className="text-xs text-gray-500">Internos</p>
+          </Card>
+        </div>
+      )}
+
       {/* Filters */}
       <Card className="mb-6">
         <div className="p-4">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
             <SearchInput
               placeholder="Buscar proyectos..."
               value={filter.search}
@@ -98,7 +132,17 @@ export default function ProjectsPage() {
                 { value: 'low', label: 'Baja' },
                 { value: 'medium', label: 'Media' },
                 { value: 'high', label: 'Alta' },
-                { value: 'critical', label: 'Crítica' },
+                { value: 'urgent', label: 'Urgente' },
+              ]}
+            />
+            <Select
+              placeholder="Tipo de proyecto"
+              value={projectTypeFilter}
+              onChange={(e) => setProjectTypeFilter(e.target.value)}
+              options={[
+                { value: '', label: 'Todos los tipos' },
+                { value: 'client', label: '👤 De Cliente' },
+                { value: 'internal', label: '🏢 Internos' },
               ]}
             />
             <Select
@@ -106,7 +150,7 @@ export default function ProjectsPage() {
               value={filter.clientId || ''}
               onChange={(e) => setFilter({ clientId: e.target.value || null })}
               options={[
-                { value: '', label: 'Todos los clientes' },
+                { value: '', label: 'Todos' },
                 ...clients.map(c => ({ value: c.id, label: c.name })),
               ]}
             />
@@ -118,14 +162,14 @@ export default function ProjectsPage() {
       {filteredProjects.length === 0 ? (
         <EmptyState
           title="No hay proyectos"
-          description={filter.search || filter.status || filter.priority ? 'No se encontraron proyectos con los filtros aplicados' : 'Comienza creando tu primer proyecto'}
+          description={filter.search || filter.status || filter.priority || projectTypeFilter ? 'No se encontraron proyectos con los filtros aplicados' : 'Comienza creando tu primer proyecto'}
           icon={
             <svg className="w-12 h-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
             </svg>
           }
           action={
-            !filter.search && !filter.status && !filter.priority && (
+            !filter.search && !filter.status && !filter.priority && !projectTypeFilter && (
               <Link href="/projects/new">
                 <Button>Crear Proyecto</Button>
               </Link>
@@ -134,7 +178,10 @@ export default function ProjectsPage() {
         />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredProjects.map((project) => (
+          {filteredProjects.map((project) => {
+            const clientName = getClientName(project.clientId);
+            const isInternal = !project.clientId;
+            return (
             <Card key={project.id} hoverable className="flex flex-col">
               <div className="p-6 flex-1">
                 <div className="flex items-start justify-between mb-3">
@@ -151,27 +198,36 @@ export default function ProjectsPage() {
                   </span>
                 </div>
 
+                {/* Project type indicator */}
+                <div className="mb-3">
+                  {isInternal ? (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                      🏢 Proyecto Interno
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-full bg-blue-50 text-blue-700 border border-blue-200">
+                      👤 {clientName}
+                    </span>
+                  )}
+                </div>
+
                 <p className="text-sm text-gray-500 mb-4 line-clamp-2">
                   {project.description || 'Sin descripción'}
                 </p>
 
                 <div className="space-y-3 mb-4">
                   <div className="flex items-center justify-between text-sm">
-                    <span className="text-gray-500">Cliente</span>
-                    <span className="font-medium text-gray-900">{getClientName(project.clientId)}</span>
-                  </div>
-                  <div className="flex items-center justify-between text-sm">
                     <span className="text-gray-500">Prioridad</span>
                     <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${priorityColors[project.priority]?.bg} ${priorityColors[project.priority]?.text}`}>
                       {priorityColors[project.priority]?.label}
                     </span>
                   </div>
-                  {project.budget && (
+                  {project.budget ? (
                     <div className="flex items-center justify-between text-sm">
                       <span className="text-gray-500">Presupuesto</span>
                       <span className="font-medium text-gray-900">{formatCurrency(project.budget)}</span>
                     </div>
-                  )}
+                  ) : null}
                 </div>
 
                 <div className="mb-4">
@@ -218,7 +274,8 @@ export default function ProjectsPage() {
                 </div>
               </div>
             </Card>
-          ))}
+            );
+          })}
         </div>
       )}
 

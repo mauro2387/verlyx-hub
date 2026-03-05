@@ -413,7 +413,8 @@ export const useProjectsStore = create<ProjectsState>((set, get) => ({
       end_date: data.endDate || data.dueDate,
       budget: data.budget,
       contact_id: data.clientId || null,
-      currency: 'USD',
+      my_company_id: data.myCompanyId || null,
+      currency: (data as any).currency || 'USD',
       progress: 0,
       tags: data.tags || [],
       is_archived: false,
@@ -443,6 +444,7 @@ export const useProjectsStore = create<ProjectsState>((set, get) => ({
       end_date: data.endDate || data.dueDate,
       budget: data.budget,
       contact_id: data.clientId,
+      my_company_id: data.myCompanyId,
       tags: data.tags,
       is_archived: data.isArchived,
     });

@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { MainLayout, PageHeader } from '@/components/layout';
 import { Button, Card, Input, Select, Textarea, Spinner } from '@/components/ui';
-import { useProjectsStore, useClientsStore } from '@/lib/store';
+import { useProjectsStore, useClientsStore, useCompanyStore } from '@/lib/store';
 import type { Project } from '@/lib/types';
 
 export default function EditProjectPage() {
@@ -13,10 +13,16 @@ export default function EditProjectPage() {
   const projectId = params.id as string;
 
   const { projects, updateProject } = useProjectsStore();
-  const { clients } = useClientsStore();
+  const { clients, fetchClients } = useClientsStore();
+  const { companies, fetchCompanies } = useCompanyStore();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [formData, setFormData] = useState<Partial<Project>>({});
+
+  useEffect(() => {
+    fetchClients();
+    fetchCompanies();
+  }, [fetchClients, fetchCompanies]);
 
   useEffect(() => {
     const project = projects.find((p) => p.id === projectId);
@@ -25,10 +31,13 @@ export default function EditProjectPage() {
         name: project.name,
         description: project.description,
         status: project.status,
+        priority: project.priority,
         startDate: project.startDate,
         dueDate: project.dueDate,
         budget: project.budget,
         clientId: project.clientId,
+        myCompanyId: project.myCompanyId,
+        tags: project.tags,
       });
     }
     setLoading(false);
@@ -74,6 +83,8 @@ export default function EditProjectPage() {
     );
   }
 
+  const isClientProject = !!project.clientId;
+
   return (
     <MainLayout>
       <PageHeader
@@ -103,38 +114,63 @@ export default function EditProjectPage() {
               onChange={(e) => updateFormData('description', e.target.value)}
               rows={4}
             />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <Select
+                label="Estado"
+                value={formData.status || ''}
+                onChange={(e) => updateFormData('status', e.target.value)}
+                options={[
+                  { value: 'backlog', label: 'Backlog' },
+                  { value: 'planning', label: 'Planificación' },
+                  { value: 'in_progress', label: 'En Progreso' },
+                  { value: 'on_hold', label: 'En Pausa' },
+                  { value: 'review', label: 'Revisión' },
+                  { value: 'done', label: 'Completado' },
+                  { value: 'cancelled', label: 'Cancelado' },
+                ]}
+              />
+              <Select
+                label="Prioridad"
+                value={formData.priority || 'medium'}
+                onChange={(e) => updateFormData('priority', e.target.value)}
+                options={[
+                  { value: 'low', label: 'Baja' },
+                  { value: 'medium', label: 'Media' },
+                  { value: 'high', label: 'Alta' },
+                  { value: 'urgent', label: 'Urgente' },
+                ]}
+              />
+            </div>
           </div>
         </Card>
 
         <Card className="p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Estado y Cliente</h3>
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">
+            {isClientProject ? 'Cliente y Empresa' : 'Empresa'}
+          </h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <Select
-              label="Estado"
-              value={formData.status || ''}
-              onChange={(e) => updateFormData('status', e.target.value)}
-              options={[
-                { value: 'planning', label: 'Planificación' },
-                { value: 'in_progress', label: 'En Progreso' },
-                { value: 'on_hold', label: 'En Pausa' },
-                { value: 'done', label: 'Completado' },
-                { value: 'cancelled', label: 'Cancelado' },
-              ]}
-            />
             <Select
               label="Cliente"
               value={formData.clientId || ''}
               onChange={(e) => updateFormData('clientId', e.target.value || undefined)}
               options={[
-                { value: '', label: 'Sin cliente asignado' },
-                ...clients.map((c) => ({ value: c.id, label: c.name })),
+                { value: '', label: 'Sin cliente (proyecto interno)' },
+                ...clients.map((c) => ({ value: c.id, label: `${c.name}${c.company ? ` — ${c.company}` : ''}` })),
               ]}
             />
+            {companies.length > 1 && (
+              <Select
+                label="Mi Empresa"
+                value={formData.myCompanyId || ''}
+                onChange={(e) => updateFormData('myCompanyId', e.target.value)}
+                options={companies.map((c) => ({ value: c.id, label: c.name }))}
+              />
+            )}
           </div>
         </Card>
 
         <Card className="p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Fechas</h3>
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">Fechas y Presupuesto</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <Input
               label="Fecha de Inicio"
@@ -143,17 +179,13 @@ export default function EditProjectPage() {
               onChange={(e) => updateFormData('startDate', e.target.value)}
             />
             <Input
-              label="Fecha de Vencimiento"
+              label="Fecha de Entrega"
               type="date"
               value={formData.dueDate?.split('T')[0] || ''}
               onChange={(e) => updateFormData('dueDate', e.target.value || undefined)}
             />
           </div>
-        </Card>
-
-        <Card className="p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Presupuesto</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
             <Input
               label="Presupuesto Total"
               type="number"
@@ -167,6 +199,17 @@ export default function EditProjectPage() {
               </p>
             </div>
           </div>
+        </Card>
+
+        <Card className="p-6">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">Etiquetas</h3>
+          <Input
+            label="Etiquetas"
+            placeholder="Separadas por comas: react, web, api"
+            value={Array.isArray(formData.tags) ? formData.tags.join(', ') : ''}
+            onChange={(e) => updateFormData('tags', e.target.value.split(',').map(t => t.trim()).filter(Boolean))}
+            helperText="Ingresa las etiquetas separadas por comas"
+          />
         </Card>
 
         <div className="flex gap-4 justify-end">
