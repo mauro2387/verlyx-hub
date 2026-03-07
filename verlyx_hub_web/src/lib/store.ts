@@ -1114,6 +1114,68 @@ export const useDocumentsStore = create<DocumentsState>((set, get) => ({
   },
 }));
 
+// ==================== Recurring Schedules Store ====================
+interface RecurringSchedule {
+  id: string;
+  my_company_id: string;
+  opportunity_id?: string;
+  project_id?: string;
+  client_id?: string;
+  payment_structure: string;
+  dev_amount: number;
+  dev_currency: string;
+  dev_description?: string;
+  dev_income_id?: string;
+  dev_paid: boolean;
+  recurring_amount: number;
+  recurring_currency: string;
+  recurring_description?: string;
+  frequency: string;
+  start_date: string;
+  next_due_date: string;
+  end_date?: string;
+  is_active: boolean;
+  total_invoiced: number;
+  total_paid: number;
+  invoices_generated: number;
+  invoices_paid: number;
+  notes?: string;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+interface RecurringSchedulesState {
+  schedules: RecurringSchedule[];
+  isLoading: boolean;
+  fetchSchedules: () => Promise<void>;
+  fetchByClientId: (clientId: string) => Promise<RecurringSchedule[]>;
+  updateSchedule: (id: string, updates: Partial<RecurringSchedule>) => Promise<void>;
+  createSchedule: (schedule: Partial<RecurringSchedule>) => Promise<void>;
+}
+
+export const useRecurringSchedulesStore = create<RecurringSchedulesState>((set, get) => ({
+  schedules: [],
+  isLoading: false,
+  fetchSchedules: async () => {
+    set({ isLoading: true });
+    const { data } = await db.recurringSchedules.getAll();
+    set({ schedules: (data || []) as RecurringSchedule[], isLoading: false });
+  },
+  fetchByClientId: async (clientId: string) => {
+    const { data } = await db.recurringSchedules.getByClientId(clientId);
+    return (data || []) as RecurringSchedule[];
+  },
+  updateSchedule: async (id: string, updates: Partial<RecurringSchedule>) => {
+    await db.recurringSchedules.update(id, updates as Record<string, unknown>);
+    get().fetchSchedules();
+  },
+  createSchedule: async (schedule: Partial<RecurringSchedule>) => {
+    await db.recurringSchedules.create(schedule as Record<string, unknown>);
+    get().fetchSchedules();
+  },
+}));
+
 // ==================== Dashboard Store ====================
 interface DashboardState {
   stats: DashboardStats | null;

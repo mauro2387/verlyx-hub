@@ -646,6 +646,51 @@ export const db = {
     },
   },
 
+  // Recurring Payment Schedules
+  recurringSchedules: {
+    async getAll() {
+      const { data, error } = await supabase
+        .from('recurring_payment_schedules')
+        .select('*')
+        .order('created_at', { ascending: false });
+      return { data, error };
+    },
+    async getByClientId(clientId: string) {
+      const { data, error } = await supabase
+        .from('recurring_payment_schedules')
+        .select('*')
+        .eq('client_id', clientId)
+        .order('created_at', { ascending: false });
+      return { data, error };
+    },
+    async getById(id: string) {
+      const { data, error } = await supabase
+        .from('recurring_payment_schedules')
+        .select('*')
+        .eq('id', id)
+        .single();
+      return { data, error };
+    },
+    async update(id: string, updates: Record<string, unknown>) {
+      const { data, error } = await supabase
+        .from('recurring_payment_schedules')
+        .update({ ...updates, updated_at: new Date().toISOString() })
+        .eq('id', id)
+        .select()
+        .single();
+      return { data, error };
+    },
+    async create(schedule: Record<string, unknown>) {
+      const { data: { user } } = await supabase.auth.getUser();
+      const { data, error } = await supabase
+        .from('recurring_payment_schedules')
+        .insert({ ...schedule, created_by: user?.id })
+        .select()
+        .single();
+      return { data, error };
+    },
+  },
+
   // Documents
   documents: {
     async getAll(folder?: string) {

@@ -55,7 +55,7 @@ export default function ProjectDetailPage() {
   const { tasks, fetchTasks } = useTasksStore();
   const { companies, fetchCompanies } = useCompanyStore();
 
-  const [activeTab, setActiveTab] = useState<'overview' | 'timeline' | 'tasks' | 'finances'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'timeline' | 'tasks' | 'finances' | 'activity' | 'team'>('overview');
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [showAI, setShowAI] = useState(false);
   const [milestones, setMilestones] = useState<Milestone[]>([]);
@@ -63,6 +63,12 @@ export default function ProjectDetailPage() {
   const [userId, setUserId] = useState<string | undefined>();
   const [selectedMilestone, setSelectedMilestone] = useState<Milestone | null>(null);
   const [milestoneTasks, setMilestoneTasks] = useState<Record<string, any[]>>({});
+  const [notes, setNotes] = useState<Array<{id: string; text: string; createdAt: string; type: 'note' | 'update' | 'decision'}>>([]);
+  const [newNote, setNewNote] = useState('');
+  const [newNoteType, setNewNoteType] = useState<'note' | 'update' | 'decision'>('note');
+  const [newTaskTitle, setNewTaskTitle] = useState('');
+  const [newTaskPriority, setNewTaskPriority] = useState('medium');
+  const [showNewTaskForm, setShowNewTaskForm] = useState(false);
 
   useEffect(() => {
     fetchProjects();
@@ -226,11 +232,28 @@ export default function ProjectDetailPage() {
     overdue: projectTasks.filter(t => t.dueDate && new Date(t.dueDate) < new Date() && t.status !== 'done').length,
   };
 
+  const addNote = () => {
+    if (!newNote.trim()) return;
+    setNotes(prev => [{ id: Date.now().toString(), text: newNote, createdAt: new Date().toISOString(), type: newNoteType }, ...prev]);
+    setNewNote('');
+  };
+
+  const addInlineTask = async () => {
+    if (!newTaskTitle.trim()) return;
+    const { data } = await supabase.from('tasks').insert({ title: newTaskTitle, project_id: projectId, user_id: userId, status: 'todo', priority: newTaskPriority }).select().single();
+    if (data) { setNewTaskTitle(''); setNewTaskPriority('medium'); setShowNewTaskForm(false); fetchTasks(); toast.success('Tarea creada', newTaskTitle); }
+  };
+
+  const daysRemaining = project.dueDate ? Math.ceil((new Date(project.dueDate).getTime() - Date.now()) / 86400000) : null;
+  const budgetUsedPct = project.budget ? Math.round(((project.spentAmount || 0) / project.budget) * 100) : 0;
+
   const tabs = [
     { key: 'overview' as const, label: 'Resumen', icon: '📊' },
     { key: 'timeline' as const, label: 'Timeline', icon: '📅', badge: milestones.filter(m => m.status === 'overdue' || m.status === 'at_risk').length || undefined },
     { key: 'tasks' as const, label: 'Tareas', icon: '✅', badge: taskStats.overdue > 0 ? taskStats.overdue : undefined },
     { key: 'finances' as const, label: 'Finanzas', icon: '💰' },
+    { key: 'activity' as const, label: 'Actividad', icon: '📝' },
+    { key: 'team' as const, label: 'Equipo', icon: '👥' },
   ];
 
   return (
@@ -349,15 +372,47 @@ export default function ProjectDetailPage() {
           {/* ===================== OVERVIEW TAB ===================== */}
           {activeTab === 'overview' && (
             <div className="space-y-6">
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                <Card><CardContent className="!p-4 text-center"><p className="text-2xl font-bold text-indigo-600">{taskStats.total}</p><p className="text-xs text-gray-500 mt-1">Tareas totales</p></CardContent></Card>
-                <Card><CardContent className="!p-4 text-center"><p className="text-2xl font-bold text-emerald-600">{taskStats.done}</p><p className="text-xs text-gray-500 mt-1">Completadas</p></CardContent></Card>
-                <Card><CardContent className="!p-4 text-center"><p className={`text-2xl font-bold ${taskStats.overdue > 0 ? 'text-red-600' : 'text-gray-400'}`}>{taskStats.overdue}</p><p className="text-xs text-gray-500 mt-1">Vencidas</p></CardContent></Card>
-                <Card><CardContent className="!p-4 text-center"><p className={`text-2xl font-bold ${taskStats.blocked > 0 ? 'text-amber-600' : 'text-gray-400'}`}>{taskStats.blocked}</p><p className="text-xs text-gray-500 mt-1">Bloqueadas</p></CardContent></Card>
+              {/* Health & Quick Stats */}
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+                {[
+                  { label: 'Tareas', value: taskStats.total, color: 'text-indigo-600', bg: 'bg-indigo-50', icon: '📋' },
+                  { label: 'Completadas', value: taskStats.done, color: 'text-emerald-600', bg: 'bg-emerald-50', icon: '✅' },
+                  { label: 'En Progreso', value: taskStats.inProgress, color: 'text-blue-600', bg: 'bg-blue-50', icon: '🔄' },
+                  { label: 'Vencidas', value: taskStats.overdue, color: taskStats.overdue > 0 ? 'text-red-600' : 'text-gray-400', bg: taskStats.overdue > 0 ? 'bg-red-50' : 'bg-gray-50', icon: '⚠️' },
+                  { label: 'Días restantes', value: daysRemaining !== null ? (daysRemaining < 0 ? `${Math.abs(daysRemaining)} atrás` : daysRemaining) : '—', color: daysRemaining !== null && daysRemaining < 0 ? 'text-red-600' : daysRemaining !== null && daysRemaining < 7 ? 'text-amber-600' : 'text-gray-700', bg: daysRemaining !== null && daysRemaining < 0 ? 'bg-red-50' : 'bg-gray-50', icon: '📅' },
+                  { label: 'Budget', value: `${budgetUsedPct}%`, color: budgetUsedPct > 90 ? 'text-red-600' : 'text-green-600', bg: budgetUsedPct > 90 ? 'bg-red-50' : 'bg-green-50', icon: '💰' },
+                ].map(s => (
+                  <div key={s.label} className={`${s.bg} rounded-xl p-3.5 text-center border border-gray-100`}>
+                    <span className="text-lg">{s.icon}</span>
+                    <p className={`text-xl font-bold ${s.color} mt-1`}>{s.value}</p>
+                    <p className="text-[10px] text-gray-500 font-medium mt-0.5">{s.label}</p>
+                  </div>
+                ))}
               </div>
+
+              {/* Health indicator */}
+              {daysRemaining !== null && daysRemaining < 0 && (
+                <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-center gap-3">
+                  <span className="text-2xl">🚨</span>
+                  <div>
+                    <p className="text-sm font-semibold text-red-700">Proyecto vencido</p>
+                    <p className="text-xs text-red-600">Este proyecto tiene {Math.abs(daysRemaining)} días de atraso. Considerá ajustar la fecha de entrega o priorizar tareas pendientes.</p>
+                  </div>
+                </div>
+              )}
+              {budgetUsedPct > 90 && (
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-center gap-3">
+                  <span className="text-2xl">⚠️</span>
+                  <div>
+                    <p className="text-sm font-semibold text-amber-700">Presupuesto casi agotado</p>
+                    <p className="text-xs text-amber-600">{budgetUsedPct}% del presupuesto utilizado. Revisá los gastos pendientes.</p>
+                  </div>
+                </div>
+              )}
 
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <Card className="lg:col-span-1">
+                  <div className="px-6 py-3 border-b border-gray-100"><h2 className="text-sm font-semibold text-gray-700">Progreso General</h2></div>
                   <CardContent className="flex flex-col items-center justify-center py-6">
                     <div className="relative w-36 h-36">
                       <svg className="w-full h-full transform -rotate-90">
@@ -373,6 +428,23 @@ export default function ProjectDetailPage() {
                         <span className="text-xs text-gray-400">Completado</span>
                       </div>
                     </div>
+                    {/* Task distribution bar */}
+                    {taskStats.total > 0 && (
+                      <div className="w-full mt-5 px-2">
+                        <div className="flex w-full h-2 rounded-full overflow-hidden bg-gray-100">
+                          {taskStats.done > 0 && <div className="bg-emerald-500 transition-all" style={{ width: `${(taskStats.done / taskStats.total) * 100}%` }} />}
+                          {taskStats.inProgress > 0 && <div className="bg-blue-500 transition-all" style={{ width: `${(taskStats.inProgress / taskStats.total) * 100}%` }} />}
+                          {taskStats.blocked > 0 && <div className="bg-amber-500 transition-all" style={{ width: `${(taskStats.blocked / taskStats.total) * 100}%` }} />}
+                          {(taskStats.total - taskStats.done - taskStats.inProgress - taskStats.blocked) > 0 && <div className="bg-gray-300 transition-all" style={{ width: `${((taskStats.total - taskStats.done - taskStats.inProgress - taskStats.blocked) / taskStats.total) * 100}%` }} />}
+                        </div>
+                        <div className="flex flex-wrap gap-x-3 gap-y-1 mt-2 justify-center">
+                          <span className="flex items-center gap-1 text-[10px] text-gray-500"><span className="w-2 h-2 rounded-full bg-emerald-500" />{taskStats.done} listas</span>
+                          <span className="flex items-center gap-1 text-[10px] text-gray-500"><span className="w-2 h-2 rounded-full bg-blue-500" />{taskStats.inProgress} en curso</span>
+                          <span className="flex items-center gap-1 text-[10px] text-gray-500"><span className="w-2 h-2 rounded-full bg-amber-500" />{taskStats.blocked} bloq.</span>
+                          <span className="flex items-center gap-1 text-[10px] text-gray-500"><span className="w-2 h-2 rounded-full bg-gray-300" />{taskStats.total - taskStats.done - taskStats.inProgress - taskStats.blocked} pendientes</span>
+                        </div>
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
 
@@ -526,17 +598,45 @@ export default function ProjectDetailPage() {
           {/* ===================== TASKS TAB ===================== */}
           {activeTab === 'tasks' && (
             <div className="space-y-4">
-              <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
-                {[
-                  { label: 'Total', value: taskStats.total, color: 'text-gray-900' },
-                  { label: 'Completadas', value: taskStats.done, color: 'text-emerald-600' },
-                  { label: 'En progreso', value: taskStats.inProgress, color: 'text-blue-600' },
-                  { label: 'Bloqueadas', value: taskStats.blocked, color: 'text-amber-600' },
-                  { label: 'Vencidas', value: taskStats.overdue, color: 'text-red-600' },
-                ].map((stat) => (
-                  <Card key={stat.label}><CardContent className="!p-3 text-center"><p className={`text-xl font-bold ${stat.color}`}>{stat.value}</p><p className="text-[10px] text-gray-500">{stat.label}</p></CardContent></Card>
-                ))}
+              <div className="flex items-center justify-between">
+                <div className="grid grid-cols-5 gap-3 flex-1 mr-4">
+                  {[
+                    { label: 'Total', value: taskStats.total, color: 'text-gray-900' },
+                    { label: 'Completadas', value: taskStats.done, color: 'text-emerald-600' },
+                    { label: 'En progreso', value: taskStats.inProgress, color: 'text-blue-600' },
+                    { label: 'Bloqueadas', value: taskStats.blocked, color: 'text-amber-600' },
+                    { label: 'Vencidas', value: taskStats.overdue, color: 'text-red-600' },
+                  ].map((stat) => (
+                    <Card key={stat.label}><CardContent className="!p-3 text-center"><p className={`text-xl font-bold ${stat.color}`}>{stat.value}</p><p className="text-[10px] text-gray-500">{stat.label}</p></CardContent></Card>
+                  ))}
+                </div>
               </div>
+
+              {/* Inline Task Creation */}
+              {!showNewTaskForm ? (
+                <button onClick={() => setShowNewTaskForm(true)} className="w-full p-3 border-2 border-dashed border-gray-200 rounded-xl text-sm text-gray-400 hover:border-indigo-300 hover:text-indigo-500 transition-colors flex items-center justify-center gap-2">
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                  Agregar tarea rápida
+                </button>
+              ) : (
+                <Card className="border-indigo-200 !bg-indigo-50/30">
+                  <CardContent className="!p-4">
+                    <div className="flex items-center gap-3">
+                      <input type="text" value={newTaskTitle} onChange={(e) => setNewTaskTitle(e.target.value)} placeholder="Nombre de la tarea..." autoFocus
+                        className="flex-1 text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+                        onKeyDown={(e) => { if (e.key === 'Enter') addInlineTask(); if (e.key === 'Escape') setShowNewTaskForm(false); }} />
+                      <select value={newTaskPriority} onChange={(e) => setNewTaskPriority(e.target.value)} className="text-xs border border-gray-200 rounded-lg px-2 py-2 bg-white">
+                        <option value="low">Baja</option>
+                        <option value="medium">Media</option>
+                        <option value="high">Alta</option>
+                        <option value="urgent">Urgente</option>
+                      </select>
+                      <Button size="sm" onClick={addInlineTask} disabled={!newTaskTitle.trim()}>Crear</Button>
+                      <Button variant="ghost" size="sm" onClick={() => setShowNewTaskForm(false)}>Cancelar</Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
 
               {['in_progress', 'todo', 'blocked', 'review', 'done'].map(status => {
                 const statusTasks = projectTasks.filter(t => t.status === status);
@@ -581,28 +681,175 @@ export default function ProjectDetailPage() {
 
           {/* ===================== FINANCES TAB ===================== */}
           {activeTab === 'finances' && (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <Card>
-                <div className="px-6 py-4 border-b border-gray-100"><h2 className="font-semibold text-gray-900">Resumen Financiero</h2></div>
-                <CardContent className="space-y-6">
-                  <div className="flex justify-between items-center"><span className="text-gray-500">Presupuesto Total</span><span className="text-2xl font-bold text-gray-900">{formatCurrency(project.budget || 0)}</span></div>
-                  <div className="flex justify-between items-center"><span className="text-gray-500">Monto Gastado</span><span className="text-2xl font-bold text-red-600">{formatCurrency(project.spentAmount || 0)}</span></div>
-                  <div className="flex justify-between items-center pt-4 border-t"><span className="text-gray-700 font-medium">Restante</span><span className="text-2xl font-bold text-green-600">{formatCurrency((project.budget || 0) - (project.spentAmount || 0))}</span></div>
-                </CardContent>
-              </Card>
+            <div className="space-y-6">
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                <Card>
+                  <CardContent className="!p-5">
+                    <p className="text-xs text-gray-400 font-medium mb-1">Presupuesto Total</p>
+                    <p className="text-2xl font-bold text-gray-900">{formatCurrency(project.budget || 0)}</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="!p-5">
+                    <p className="text-xs text-gray-400 font-medium mb-1">Monto Gastado</p>
+                    <p className="text-2xl font-bold text-red-600">{formatCurrency(project.spentAmount || 0)}</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="!p-5">
+                    <p className="text-xs text-gray-400 font-medium mb-1">Restante</p>
+                    <p className={`text-2xl font-bold ${((project.budget || 0) - (project.spentAmount || 0)) < 0 ? 'text-red-600' : 'text-emerald-600'}`}>{formatCurrency((project.budget || 0) - (project.spentAmount || 0))}</p>
+                  </CardContent>
+                </Card>
+              </div>
               <Card>
                 <div className="px-6 py-4 border-b border-gray-100"><h2 className="font-semibold text-gray-900">Uso del Presupuesto</h2></div>
                 <CardContent>
-                  <div className="flex items-center justify-center py-8">
-                    <div className="w-full max-w-xs">
-                      <ProgressBar value={project.budget ? ((project.spentAmount || 0) / project.budget) * 100 : 0} size="lg" color={((project.spentAmount || 0) / (project.budget || 1)) > 0.9 ? 'red' : 'indigo'} showLabel />
-                      <p className="text-center text-sm text-gray-500 mt-4">
-                        {project.budget ? `${Math.round(((project.spentAmount || 0) / project.budget) * 100)}% del presupuesto utilizado` : 'Sin presupuesto asignado'}
-                      </p>
+                  <div className="py-6">
+                    <div className="mb-4">
+                      <div className="flex items-center justify-between text-sm mb-2">
+                        <span className="text-gray-500">Gastado</span>
+                        <span className="font-semibold">{budgetUsedPct}%</span>
+                      </div>
+                      <ProgressBar value={budgetUsedPct} size="lg" color={budgetUsedPct > 90 ? 'red' : budgetUsedPct > 70 ? 'orange' : 'indigo'} showLabel />
                     </div>
+                    <div className="mb-4">
+                      <div className="flex items-center justify-between text-sm mb-2">
+                        <span className="text-gray-500">Progreso del proyecto</span>
+                        <span className="font-semibold">{project.progressPercentage || 0}%</span>
+                      </div>
+                      <ProgressBar value={project.progressPercentage || 0} size="lg" color="green" />
+                    </div>
+                    {project.budget && project.budget > 0 && (
+                      <div className="mt-4 p-3 rounded-lg bg-gray-50 text-xs text-gray-500">
+                        {budgetUsedPct > (project.progressPercentage || 0)
+                          ? <span className="text-amber-600 font-medium">⚠️ El gasto va por delante del progreso — revisá la eficiencia del proyecto</span>
+                          : <span className="text-emerald-600 font-medium">✅ El gasto está alineado o por debajo del progreso — buen ritmo</span>}
+                      </div>
+                    )}
                   </div>
                 </CardContent>
               </Card>
+            </div>
+          )}
+
+          {/* ===================== ACTIVITY TAB ===================== */}
+          {activeTab === 'activity' && (
+            <div className="space-y-4">
+              <Card>
+                <div className="px-6 py-4 border-b border-gray-100"><h2 className="font-semibold text-gray-900">Agregar nota o actualización</h2></div>
+                <CardContent>
+                  <div className="flex gap-2 mb-3">
+                    {(['note', 'update', 'decision'] as const).map(type => (
+                      <button key={type} onClick={() => setNewNoteType(type)}
+                        className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${newNoteType === type ? 'bg-indigo-100 text-indigo-700' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
+                        {type === 'note' ? '📝 Nota' : type === 'update' ? '📢 Update' : '🎯 Decisión'}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="flex gap-2">
+                    <textarea value={newNote} onChange={(e) => setNewNote(e.target.value)} placeholder="Escribí una nota, actualización o decisión sobre el proyecto..."
+                      className="flex-1 text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none min-h-[80px]" />
+                    <Button onClick={addNote} disabled={!newNote.trim()}>Publicar</Button>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Activity Timeline */}
+              <Card>
+                <div className="px-6 py-4 border-b border-gray-100"><h2 className="font-semibold text-gray-900">Historial de Actividad</h2></div>
+                <CardContent className="p-0">
+                  {notes.length === 0 && projectTasks.length === 0 ? (
+                    <p className="text-gray-400 text-sm text-center py-12">No hay actividad registrada aún</p>
+                  ) : (
+                    <div className="divide-y divide-gray-50">
+                      {notes.map(note => (
+                        <div key={note.id} className="px-6 py-4 flex gap-3 hover:bg-gray-50/50">
+                          <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-sm ${note.type === 'note' ? 'bg-blue-100' : note.type === 'update' ? 'bg-amber-100' : 'bg-emerald-100'}`}>
+                            {note.type === 'note' ? '📝' : note.type === 'update' ? '📢' : '🎯'}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${note.type === 'note' ? 'bg-blue-50 text-blue-600' : note.type === 'update' ? 'bg-amber-50 text-amber-600' : 'bg-emerald-50 text-emerald-600'}`}>
+                                {note.type === 'note' ? 'Nota' : note.type === 'update' ? 'Update' : 'Decisión'}
+                              </span>
+                              <span className="text-[10px] text-gray-400">{formatDate(note.createdAt)}</span>
+                            </div>
+                            <p className="text-sm text-gray-700 mt-1 whitespace-pre-wrap">{note.text}</p>
+                          </div>
+                        </div>
+                      ))}
+                      {/* Project creation event */}
+                      <div className="px-6 py-4 flex gap-3 bg-gray-50/30">
+                        <div className="w-8 h-8 rounded-full flex items-center justify-center bg-gray-100 shrink-0 text-sm">🚀</div>
+                        <div>
+                          <span className="text-[10px] text-gray-400">{formatDate(project.createdAt)}</span>
+                          <p className="text-sm text-gray-500">Proyecto creado</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          )}
+
+          {/* ===================== TEAM TAB ===================== */}
+          {activeTab === 'team' && (
+            <div className="space-y-6">
+              <Card>
+                <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+                  <h2 className="font-semibold text-gray-900">Equipo del Proyecto</h2>
+                </div>
+                <CardContent>
+                  {(!project.teamMembers || project.teamMembers.length === 0) ? (
+                    <div className="text-center py-12">
+                      <span className="text-4xl mb-3 block">👥</span>
+                      <p className="text-gray-500 text-sm">No hay miembros asignados a este proyecto</p>
+                      <p className="text-gray-400 text-xs mt-1">Agregá miembros desde la edición del proyecto para asignar responsabilidades</p>
+                      <Link href={`/projects/${projectId}/edit`}><Button variant="outline" size="sm" className="mt-4">Agregar miembros</Button></Link>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {project.teamMembers.map((member, i) => (
+                        <div key={i} className="flex items-center gap-3 p-3 rounded-xl bg-gray-50 border border-gray-100">
+                          <div className="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 font-bold text-sm">
+                            {typeof member === 'string' ? member.substring(0, 2).toUpperCase() : '??'}
+                          </div>
+                          <div>
+                            <p className="text-sm font-medium text-gray-900">{typeof member === 'string' ? member : 'Miembro'}</p>
+                            <p className="text-xs text-gray-400">Asignado al proyecto</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <Card>
+                  <div className="px-6 py-4 border-b border-gray-100"><h2 className="font-semibold text-gray-900">Resumen del Proyecto</h2></div>
+                  <CardContent className="space-y-3">
+                    <div className="flex justify-between"><span className="text-sm text-gray-500">Tipo</span><span className="text-sm font-medium">{isInternalProject ? '🏢 Interno' : '👤 Cliente'}</span></div>
+                    {client && <div className="flex justify-between"><span className="text-sm text-gray-500">Cliente</span><span className="text-sm font-medium">{client.name}</span></div>}
+                    {company && <div className="flex justify-between"><span className="text-sm text-gray-500">Empresa</span><span className="text-sm font-medium">{company.name}</span></div>}
+                    <div className="flex justify-between"><span className="text-sm text-gray-500">Hitos</span><span className="text-sm font-medium">{milestones.filter(m => m.status === 'completed').length} / {milestones.length}</span></div>
+                    <div className="flex justify-between"><span className="text-sm text-gray-500">Tareas</span><span className="text-sm font-medium">{taskStats.done} / {taskStats.total} completadas</span></div>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <div className="px-6 py-4 border-b border-gray-100"><h2 className="font-semibold text-gray-900">Fechas Clave</h2></div>
+                  <CardContent className="space-y-3">
+                    <div className="flex justify-between"><span className="text-sm text-gray-500">Inicio</span><span className="text-sm font-medium">{formatDate(project.startDate)}</span></div>
+                    <div className="flex justify-between"><span className="text-sm text-gray-500">Entrega</span><span className={`text-sm font-medium ${daysRemaining !== null && daysRemaining < 0 ? 'text-red-600' : ''}`}>{formatDate(project.dueDate || project.endDate)}</span></div>
+                    {daysRemaining !== null && (
+                      <div className="flex justify-between"><span className="text-sm text-gray-500">Días restantes</span><span className={`text-sm font-medium ${daysRemaining < 0 ? 'text-red-600' : daysRemaining < 7 ? 'text-amber-600' : 'text-emerald-600'}`}>{daysRemaining < 0 ? `${Math.abs(daysRemaining)} días de atraso` : `${daysRemaining} días`}</span></div>
+                    )}
+                    <div className="flex justify-between"><span className="text-sm text-gray-500">Creado</span><span className="text-sm font-medium">{formatDate(project.createdAt)}</span></div>
+                  </CardContent>
+                </Card>
+              </div>
             </div>
           )}
         </div>

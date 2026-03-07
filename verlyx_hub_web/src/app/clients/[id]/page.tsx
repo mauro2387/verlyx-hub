@@ -4,11 +4,11 @@ import { useEffect, useState, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { MainLayout, PageHeader } from '@/components/layout';
 import { Button, Card, CardContent, Badge, Avatar, Modal, Input, Textarea, Select, Loading, EmptyState } from '@/components/ui';
-import { useClientsStore, useContactActivitiesStore, useLeadScoresStore, useProjectsStore, useOpportunitiesStore } from '@/lib/store';
+import { useClientsStore, useContactActivitiesStore, useLeadScoresStore, useProjectsStore, useOpportunitiesStore, useRecurringSchedulesStore, useIncomesStore } from '@/lib/store';
 import { ContactActivity, ContactActivityType, Client } from '@/lib/types';
 import { cn, formatDate, formatCurrency, formatRelativeTime } from '@/lib/utils';
 
-type TabType = 'overview' | 'timeline' | 'deals' | 'projects' | 'notes';
+type TabType = 'overview' | 'timeline' | 'deals' | 'projects' | 'billing' | 'notes';
 
 // Activity type configuration
 const activityConfig: Record<ContactActivityType, { icon: string; label: string; color: string }> = {
@@ -47,6 +47,8 @@ export default function ClientDetailPage() {
   const { getContactScore, recalculateScore } = useLeadScoresStore();
   const { projects, fetchProjects } = useProjectsStore();
   const { opportunities: deals, fetchOpportunities: fetchDeals } = useOpportunitiesStore();
+  const { fetchByClientId: fetchSchedulesByClient, updateSchedule } = useRecurringSchedulesStore();
+  const { incomes, fetchIncomes } = useIncomesStore();
 
   const [client, setClient] = useState<Client | null>(null);
   const [clientActivities, setClientActivities] = useState<ContactActivity[]>([]);
@@ -54,6 +56,10 @@ export default function ClientDetailPage() {
   const [activeTab, setActiveTab] = useState<TabType>('overview');
   const [isActivityModalOpen, setIsActivityModalOpen] = useState(false);
   const [isOnboardingEditOpen, setIsOnboardingEditOpen] = useState(false);
+  const [isBillingEditOpen, setIsBillingEditOpen] = useState(false);
+  const [clientSchedules, setClientSchedules] = useState<any[]>([]);
+  const [editingSchedule, setEditingSchedule] = useState<any | null>(null);
+  const [billingForm, setBillingForm] = useState({ recurring_amount: '', frequency: '', notes: '' });
   const [activityType, setActivityType] = useState<'call' | 'email' | 'meeting' | 'note'>('note');
   const [activityForm, setActivityForm] = useState({ subject: '', description: '', followUpDate: '' });
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -63,7 +69,8 @@ export default function ClientDetailPage() {
     fetchClients();
     fetchProjects();
     fetchDeals();
-  }, [fetchClients, fetchProjects, fetchDeals]);
+    fetchIncomes();
+  }, [fetchClients, fetchProjects, fetchDeals, fetchIncomes]);
 
   // Set client when clients are loaded
   useEffect(() => {
@@ -77,16 +84,18 @@ export default function ClientDetailPage() {
   const loadClientData = useCallback(async () => {
     if (!clientId) return;
     
-    const [activitiesData, scoreData] = await Promise.all([
+    const [activitiesData, scoreData, schedulesData] = await Promise.all([
       fetchByContact(clientId),
       getContactScore(clientId),
+      fetchSchedulesByClient(clientId),
     ]);
     
     setClientActivities(activitiesData || []);
+    setClientSchedules(schedulesData || []);
     if (scoreData) {
       setLeadScore(scoreData);
     }
-  }, [clientId, fetchByContact, getContactScore]);
+  }, [clientId, fetchByContact, getContactScore, fetchSchedulesByClient]);
 
   useEffect(() => {
     loadClientData();
@@ -409,6 +418,7 @@ export default function ClientDetailPage() {
             { id: 'timeline', label: 'Timeline' },
             { id: 'deals', label: 'Deals' },
             { id: 'projects', label: 'Proyectos' },
+            { id: 'billing', label: '💰 Facturación' },
           ].map((tab) => (
             <button
               key={tab.id}
@@ -654,6 +664,258 @@ export default function ClientDetailPage() {
               </CardContent>
             </Card>
           )}
+
+          {/* Billing Tab */}
+          {activeTab === 'billing' && (
+            <div className="space-y-6">
+              {/* Active Recurring Schedules */}
+              {clientSchedules.length > 0 ? (
+                clientSchedules.map((schedule) => {
+                  const clientIncomes = incomes.filter(i => (i as any).recurringScheduleId === schedule.id || (i as any).recurring_schedule_id === schedule.id);
+                  const paidIncomes = clientIncomes.filter(i => i.status === 'received');
+                  const pendingIncomes = clientIncomes.filter(i => i.status === 'pending');
+                  const overdueIncomes = pendingIncomes.filter(i => i.dueDate && new Date(i.dueDate) < new Date());
+                  const frequencyLabels: Record<string, string> = {
+                    monthly: 'Mensual',
+                    quarterly: 'Trimestral',
+                    semi_annual: 'Semestral',
+                    annual: 'Anual',
+                  };
+                  const structureLabels: Record<string, string> = {
+                    recurring: 'Recurrente',
+                    dev_plus_maintenance: 'Desarrollo + Mantenimiento',
+                    one_time: 'Pago Único',
+                  };
+
+                  return (
+                    <Card key={schedule.id}>
+                      <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${schedule.is_active ? 'bg-emerald-100 text-emerald-600' : 'bg-gray-100 text-gray-400'}`}>
+                            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                            </svg>
+                          </div>
+                          <div>
+                            <h3 className="font-semibold text-gray-900">
+                              {structureLabels[schedule.payment_structure] || schedule.payment_structure}
+                            </h3>
+                            <p className="text-sm text-gray-500">
+                              {schedule.recurring_description || `Cobro ${frequencyLabels[schedule.frequency]?.toLowerCase() || schedule.frequency}`}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className={`px-3 py-1 text-xs font-medium rounded-full ${schedule.is_active ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500'}`}>
+                            {schedule.is_active ? 'Activo' : 'Inactivo'}
+                          </span>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setEditingSchedule(schedule);
+                              setBillingForm({
+                                recurring_amount: String(schedule.recurring_amount),
+                                frequency: schedule.frequency,
+                                notes: schedule.notes || '',
+                              });
+                              setIsBillingEditOpen(true);
+                            }}
+                          >
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                            </svg>
+                            Editar
+                          </Button>
+                        </div>
+                      </div>
+                      <CardContent>
+                        {/* Main Amount Display */}
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+                          <div className="text-center p-4 bg-gradient-to-br from-indigo-50 to-blue-50 rounded-xl border border-indigo-100">
+                            <p className="text-3xl font-bold text-indigo-700">
+                              {schedule.recurring_currency} {Number(schedule.recurring_amount).toLocaleString()}
+                            </p>
+                            <p className="text-sm text-indigo-500 mt-1">
+                              Cobro {frequencyLabels[schedule.frequency] || schedule.frequency}
+                            </p>
+                          </div>
+                          <div className="text-center p-4 bg-gray-50 rounded-xl">
+                            <p className="text-2xl font-bold text-gray-900">
+                              {schedule.next_due_date ? new Date(schedule.next_due_date).toLocaleDateString('es') : '—'}
+                            </p>
+                            <p className="text-sm text-gray-500 mt-1">Próximo Cobro</p>
+                            {schedule.next_due_date && new Date(schedule.next_due_date) < new Date() && (
+                              <span className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 text-xs font-medium rounded-full bg-red-100 text-red-700">
+                                ⚠️ Vencido
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-center p-4 bg-gray-50 rounded-xl">
+                            <p className="text-2xl font-bold text-emerald-600">
+                              {schedule.recurring_currency} {Number(schedule.total_paid || 0).toLocaleString()}
+                            </p>
+                            <p className="text-sm text-gray-500 mt-1">Total Cobrado</p>
+                          </div>
+                        </div>
+
+                        {/* Dev Payment (for hybrid structures) */}
+                        {schedule.payment_structure === 'dev_plus_maintenance' && schedule.dev_amount > 0 && (
+                          <div className={`mb-6 p-4 rounded-xl border ${schedule.dev_paid ? 'bg-green-50 border-green-200' : 'bg-amber-50 border-amber-200'}`}>
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-3">
+                                {schedule.dev_paid ? (
+                                  <span className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center">
+                                    <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
+                                  </span>
+                                ) : (
+                                  <span className="w-8 h-8 bg-amber-400 rounded-full flex items-center justify-center text-white text-sm">$</span>
+                                )}
+                                <div>
+                                  <p className={`font-medium ${schedule.dev_paid ? 'text-green-800' : 'text-amber-800'}`}>
+                                    Pago de Desarrollo (único)
+                                  </p>
+                                  <p className={`text-sm ${schedule.dev_paid ? 'text-green-600' : 'text-amber-600'}`}>
+                                    {schedule.dev_description || 'Desarrollo inicial'}
+                                  </p>
+                                </div>
+                              </div>
+                              <div className="text-right">
+                                <p className={`text-lg font-bold ${schedule.dev_paid ? 'text-green-700' : 'text-amber-700'}`}>
+                                  {schedule.dev_currency} {Number(schedule.dev_amount).toLocaleString()}
+                                </p>
+                                <p className={`text-xs ${schedule.dev_paid ? 'text-green-500' : 'text-amber-500'}`}>
+                                  {schedule.dev_paid ? 'Pagado' : 'Pendiente'}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Stats Row */}
+                        <div className="grid grid-cols-4 gap-3 mb-6">
+                          <div className="p-3 bg-gray-50 rounded-lg text-center">
+                            <p className="text-lg font-bold text-gray-900">{schedule.invoices_generated || 0}</p>
+                            <p className="text-xs text-gray-500">Generadas</p>
+                          </div>
+                          <div className="p-3 bg-gray-50 rounded-lg text-center">
+                            <p className="text-lg font-bold text-emerald-600">{schedule.invoices_paid || 0}</p>
+                            <p className="text-xs text-gray-500">Pagadas</p>
+                          </div>
+                          <div className="p-3 bg-gray-50 rounded-lg text-center">
+                            <p className="text-lg font-bold text-amber-600">{pendingIncomes.length}</p>
+                            <p className="text-xs text-gray-500">Pendientes</p>
+                          </div>
+                          <div className="p-3 bg-gray-50 rounded-lg text-center">
+                            <p className={`text-lg font-bold ${overdueIncomes.length > 0 ? 'text-red-600' : 'text-gray-400'}`}>{overdueIncomes.length}</p>
+                            <p className="text-xs text-gray-500">Vencidas</p>
+                          </div>
+                        </div>
+
+                        {/* Schedule Info */}
+                        <div className="grid grid-cols-2 gap-4 text-sm">
+                          <div>
+                            <span className="text-gray-500">Inicio:</span>
+                            <span className="ml-2 font-medium text-gray-900">{schedule.start_date ? new Date(schedule.start_date).toLocaleDateString('es') : '—'}</span>
+                          </div>
+                          <div>
+                            <span className="text-gray-500">Fin:</span>
+                            <span className="ml-2 font-medium text-gray-900">{schedule.end_date ? new Date(schedule.end_date).toLocaleDateString('es') : 'Indefinido'}</span>
+                          </div>
+                        </div>
+
+                        {/* Recent Incomes for this schedule */}
+                        {clientIncomes.length > 0 && (
+                          <div className="mt-6 pt-6 border-t border-gray-100">
+                            <h4 className="text-sm font-semibold text-gray-700 mb-3">Últimos Cobros</h4>
+                            <div className="space-y-2">
+                              {clientIncomes.slice(0, 5).map((income) => (
+                                <div key={income.id} className="flex items-center justify-between p-3 rounded-lg bg-gray-50">
+                                  <div className="flex items-center gap-3">
+                                    <span className={`w-2 h-2 rounded-full ${income.status === 'received' ? 'bg-emerald-500' : income.status === 'pending' ? 'bg-amber-500' : 'bg-gray-400'}`} />
+                                    <div>
+                                      <p className="text-sm font-medium text-gray-900">{income.description || 'Cobro recurrente'}</p>
+                                      <p className="text-xs text-gray-500">{income.dueDate ? new Date(income.dueDate).toLocaleDateString('es') : '—'}</p>
+                                    </div>
+                                  </div>
+                                  <div className="text-right">
+                                    <p className="text-sm font-bold text-gray-900">{formatCurrency(income.amount)}</p>
+                                    <span className={`text-xs px-2 py-0.5 rounded-full ${income.status === 'received' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                                      {income.status === 'received' ? 'Cobrado' : 'Pendiente'}
+                                    </span>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {schedule.notes && (
+                          <div className="mt-4 pt-4 border-t border-gray-100">
+                            <p className="text-xs text-gray-400">Notas</p>
+                            <p className="text-sm text-gray-600">{schedule.notes}</p>
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  );
+                })
+              ) : (
+                <Card>
+                  <CardContent className="text-center py-12">
+                    <div className="w-16 h-16 bg-gray-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                      <svg className="w-8 h-8 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    </div>
+                    <h3 className="text-lg font-semibold text-gray-900 mb-2">Sin plan de facturación</h3>
+                    <p className="text-sm text-gray-500 max-w-md mx-auto">
+                      Este cliente no tiene un plan de cobro recurrente. Se crea automáticamente al ganar un deal con estructura de pago recurrente.
+                    </p>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* All client incomes */}
+              <Card>
+                <div className="px-6 py-4 border-b border-gray-100">
+                  <h3 className="font-semibold text-gray-900">Historial de Ingresos</h3>
+                </div>
+                <CardContent>
+                  {(() => {
+                    const allClientIncomes = incomes.filter(i => (i as any).clientId === clientId || (i as any).client_id === clientId);
+                    if (allClientIncomes.length === 0) {
+                      return <p className="text-sm text-gray-500 text-center py-6">No hay ingresos registrados para este cliente</p>;
+                    }
+                    return (
+                      <div className="space-y-2">
+                        {allClientIncomes.map((income) => (
+                          <div key={income.id} className="flex items-center justify-between p-3 rounded-lg hover:bg-gray-50 transition">
+                            <div className="flex items-center gap-3 flex-1 min-w-0">
+                              <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${income.status === 'received' ? 'bg-emerald-500' : income.status === 'overdue' ? 'bg-red-500' : 'bg-amber-500'}`} />
+                              <div className="min-w-0">
+                                <p className="text-sm font-medium text-gray-900 truncate">{income.description || 'Ingreso'}</p>
+                                <p className="text-xs text-gray-500">
+                                  {income.dueDate ? new Date(income.dueDate).toLocaleDateString('es') : '—'}
+                                  {(income as any).is_development_payment && <span className="ml-2 text-indigo-500">• Desarrollo</span>}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="text-right shrink-0">
+                              <p className="text-sm font-bold text-gray-900">{formatCurrency(income.amount)}</p>
+                              <span className={`text-xs px-2 py-0.5 rounded-full ${income.status === 'received' ? 'bg-emerald-100 text-emerald-700' : income.status === 'overdue' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>
+                                {income.status === 'received' ? 'Cobrado' : income.status === 'overdue' ? 'Vencido' : 'Pendiente'}
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })()}
+                </CardContent>
+              </Card>
+            </div>
+          )}
         </div>
 
         {/* Sidebar */}
@@ -802,6 +1064,117 @@ export default function ClientDetailPage() {
             </Button>
           </div>
         </div>
+      </Modal>
+
+      {/* Billing Edit Modal */}
+      <Modal
+        isOpen={isBillingEditOpen}
+        onClose={() => setIsBillingEditOpen(false)}
+        title="Editar Plan de Facturación"
+        size="lg"
+      >
+        {editingSchedule && (
+          <div className="space-y-5">
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <div className="flex items-center gap-2 mb-1">
+                <svg className="w-4 h-4 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                <p className="text-sm font-medium text-blue-900">Cambiar monto de cobro</p>
+              </div>
+              <p className="text-xs text-blue-700">
+                Monto actual: <span className="font-bold">{editingSchedule.recurring_currency} {Number(editingSchedule.recurring_amount).toLocaleString()}</span> / {editingSchedule.frequency === 'monthly' ? 'mes' : editingSchedule.frequency === 'quarterly' ? 'trimestre' : editingSchedule.frequency === 'annual' ? 'año' : editingSchedule.frequency}. El cambio se aplicará a los próximos cobros generados.
+              </p>
+            </div>
+
+            <Input
+              label="Nuevo Monto"
+              type="number"
+              placeholder="0.00"
+              value={billingForm.recurring_amount}
+              onChange={(e) => setBillingForm({ ...billingForm, recurring_amount: e.target.value })}
+            />
+
+            <Select
+              label="Frecuencia"
+              value={billingForm.frequency}
+              onChange={(e) => setBillingForm({ ...billingForm, frequency: e.target.value })}
+              options={[
+                { value: 'monthly', label: 'Mensual' },
+                { value: 'quarterly', label: 'Trimestral' },
+                { value: 'semi_annual', label: 'Semestral' },
+                { value: 'annual', label: 'Anual' },
+              ]}
+            />
+
+            <Textarea
+              label="Nota del cambio (opcional)"
+              placeholder="Ej: Se subió el precio por ampliación de servicios..."
+              value={billingForm.notes}
+              onChange={(e) => setBillingForm({ ...billingForm, notes: e.target.value })}
+              rows={3}
+            />
+
+            <div className="flex justify-end gap-3 pt-4 border-t">
+              <Button variant="outline" onClick={() => setIsBillingEditOpen(false)}>
+                Cancelar
+              </Button>
+              <Button
+                onClick={async () => {
+                  if (!editingSchedule) return;
+                  const oldAmount = editingSchedule.recurring_amount;
+                  const newAmount = parseFloat(billingForm.recurring_amount);
+                  if (isNaN(newAmount) || newAmount < 0) return;
+
+                  const changeLog = editingSchedule.metadata?.price_changes || [];
+                  changeLog.push({
+                    date: new Date().toISOString(),
+                    old_amount: oldAmount,
+                    new_amount: newAmount,
+                    old_frequency: editingSchedule.frequency,
+                    new_frequency: billingForm.frequency,
+                    note: billingForm.notes || undefined,
+                  });
+
+                  await updateSchedule(editingSchedule.id, {
+                    recurring_amount: newAmount,
+                    frequency: billingForm.frequency,
+                    notes: billingForm.notes || editingSchedule.notes,
+                    metadata: { ...editingSchedule.metadata, price_changes: changeLog },
+                  } as any);
+
+                  // Refresh data
+                  const updated = await fetchSchedulesByClient(clientId);
+                  setClientSchedules(updated || []);
+                  setIsBillingEditOpen(false);
+                  setEditingSchedule(null);
+                }}
+              >
+                Guardar Cambios
+              </Button>
+            </div>
+
+            {/* Price Change History */}
+            {editingSchedule.metadata?.price_changes && editingSchedule.metadata.price_changes.length > 0 && (
+              <div className="pt-4 border-t border-gray-100">
+                <h4 className="text-sm font-semibold text-gray-700 mb-3">Historial de Cambios de Precio</h4>
+                <div className="space-y-2 max-h-48 overflow-y-auto">
+                  {(editingSchedule.metadata.price_changes as any[]).slice().reverse().map((change: any, i: number) => (
+                    <div key={i} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg text-sm">
+                      <div>
+                        <p className="text-gray-500">{new Date(change.date).toLocaleDateString('es')}</p>
+                        {change.note && <p className="text-xs text-gray-400 mt-0.5">{change.note}</p>}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-gray-400 line-through">{Number(change.old_amount).toLocaleString()}</span>
+                        <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" /></svg>
+                        <span className="font-bold text-gray-900">{Number(change.new_amount).toLocaleString()}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </Modal>
 
       {/* Onboarding Edit Modal */}
