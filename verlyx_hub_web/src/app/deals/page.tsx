@@ -108,7 +108,22 @@ export default function DealsPage() {
   }, [fetchOpportunities, fetchClients]);
 
   const filteredOpps = useMemo(() => {
+    const now = Date.now();
+    const TWELVE_HOURS = 12 * 60 * 60 * 1000;
+    const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
+
     return opportunities.filter(opp => {
+      // Auto-hide won opportunities after 12 hours
+      if (opp.stage === 'won' && opp.wonAt) {
+        const wonTime = new Date(opp.wonAt).getTime();
+        if (now - wonTime > TWELVE_HOURS) return false;
+      }
+      // Auto-hide lost opportunities after 24 hours
+      if (opp.stage === 'lost' && opp.lostAt) {
+        const lostTime = new Date(opp.lostAt).getTime();
+        if (now - lostTime > TWENTY_FOUR_HOURS) return false;
+      }
+
       const matchesSearch = !searchTerm ||
         opp.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
         opp.description?.toLowerCase().includes(searchTerm.toLowerCase());

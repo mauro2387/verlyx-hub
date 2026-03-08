@@ -38,6 +38,14 @@ export default function TasksPage() {
   }, [fetchTasks, fetchProjects]);
 
   const filteredTasks = tasks.filter((task) => {
+    // Auto-hide done/cancelled tasks after 12 hours
+    if (task.status === 'done' || task.status === 'cancelled') {
+      const completedTime = task.completedAt || task.updatedAt;
+      if (completedTime) {
+        const elapsed = Date.now() - new Date(completedTime).getTime();
+        if (elapsed > 12 * 60 * 60 * 1000) return false;
+      }
+    }
     if (filter.search && !task.title.toLowerCase().includes(filter.search.toLowerCase())) return false;
     if (filter.status && task.status !== filter.status) return false;
     if (filter.priority && task.priority !== filter.priority) return false;

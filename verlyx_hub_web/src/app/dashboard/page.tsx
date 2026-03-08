@@ -27,7 +27,7 @@ export default function DashboardPage() {
   // Financial data
   const { stats: financialStats, fetchStats: fetchFinancialStats, isLoading: financialLoading } = useFinancialStatsStore();
   const { expenses, fetchExpenses } = useExpensesStore();
-  const { incomes, fetchIncomes, getOverdueIncomes, getPendingIncomes } = useIncomesStore();
+  const { incomes, fetchIncomes, getOverdueIncomes, getPendingIncomes, generateRecurringIncomes } = useIncomesStore();
   const { accounts, fetchAccounts, getTotalBalance } = useAccountsStore();
 
   useEffect(() => {
@@ -40,7 +40,9 @@ export default function DashboardPage() {
     fetchExpenses();
     fetchIncomes();
     fetchAccounts();
-  }, [fetchStats, fetchProjects, fetchTasks, fetchOpportunities, fetchClients, fetchFinancialStats, fetchExpenses, fetchIncomes, fetchAccounts]);
+    // Auto-generate any pending recurring incomes
+    generateRecurringIncomes();
+  }, [fetchStats, fetchProjects, fetchTasks, fetchOpportunities, fetchClients, fetchFinancialStats, fetchExpenses, fetchIncomes, fetchAccounts, generateRecurringIncomes]);
 
   const recentProjects = projects.slice(0, 5);
   const pendingTasks = tasks.filter(t => t.status === 'todo' || t.status === 'in_progress').slice(0, 5);
